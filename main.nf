@@ -1,8 +1,8 @@
 workflow {
-
+    TASK()
 }
 
-process {
+process TASK {
     input:
 
     script:
