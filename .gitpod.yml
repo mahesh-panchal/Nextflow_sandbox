@@ -1,1 +1,5 @@
 image: nfcore/gitpod:latest
+
+tasks:
+  - name: Update Nextflow
+    command: nextflow self-update
