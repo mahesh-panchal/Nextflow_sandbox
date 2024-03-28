@@ -2,3 +2,6 @@
 .nextflow*
 work/
 results/
+
+# pixi environments
+.pixi
