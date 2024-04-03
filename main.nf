@@ -4,7 +4,7 @@ workflow {
 
 process TASK {
     input:
-    val it
+    val num
 
     script:
     """
