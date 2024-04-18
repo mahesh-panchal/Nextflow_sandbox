@@ -4,7 +4,7 @@ This repository is a place to explore Nextflow and nf-core functions in the Gitp
 
 [![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/mahesh-panchal/Nextflow_sandbox)
 
-This [Gitpod](https://www.gitpod.io/) environment comes installed with:
+This [Gitpod](https://www.gitpod.io/) environment (a docker container) comes installed with:
 - Git
 - Docker
 - Apptainer
