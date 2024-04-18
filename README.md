@@ -14,6 +14,8 @@ This [Gitpod](https://www.gitpod.io/) environment comes installed with:
 - nf-core
 - nf-test
 
+The [Dockerfile](https://github.com/nf-core/tools/blob/master/nf_core/gitpod/gitpod.Dockerfile) for this environment lives on nf-core/tools.
+
 ## Explore
 
 <details>
