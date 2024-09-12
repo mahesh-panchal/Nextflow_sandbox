@@ -9,7 +9,7 @@ This [Gitpod](https://www.gitpod.io/) environment (a docker container) comes ins
 - Docker
 - Apptainer
 - Conda
-- Mamba
+- Pixi
 - Nextflow
 - nf-core
 - nf-test
