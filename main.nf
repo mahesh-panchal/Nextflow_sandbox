@@ -1,5 +1,5 @@
 workflow {
-    TASK(1)
+    TASK(1).view()
 }
 
 process TASK {
