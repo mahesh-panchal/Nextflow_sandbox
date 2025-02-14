@@ -8,6 +8,7 @@ process TASK {
 
     script:
     """
+    echo ${num}
     """
 
     output:
