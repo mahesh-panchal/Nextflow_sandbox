@@ -1,0 +1,12 @@
+[project]
+authors = ["Mahesh Binzer-Panchal <mahesh.binzer-panchal@nbis.se>"]
+channels = ["bioconda", "conda-forge"]
+name = "Nextflow_sandbox"
+platforms = ["linux-64", "osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+nextflow = ">=24.10.4,<25"
+gh = ">=2.67.0,<3"
