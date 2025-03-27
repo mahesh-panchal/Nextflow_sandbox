@@ -6,6 +6,7 @@ platforms = ["linux-64", "osx-arm64"]
 version = "0.1.0"
 
 [tasks]
+clean-all = "rm -rf work/ .nextflow*"
 
 [dependencies]
 nextflow = ">=24.10.4,<25"
