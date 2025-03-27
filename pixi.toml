@@ -9,5 +9,5 @@ version = "0.1.0"
 clean-all = "rm -rf work/ .nextflow*"
 
 [dependencies]
-nextflow = ">=24.10.4,<25"
-gh = ">=2.67.0,<3"
+nextflow = ">=24.10.5,<25"
+gh = ">=2.69.0,<3"
