@@ -49,7 +49,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libxcb-1.17.0-h8a09558_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.2.13-h4ab18f5_6.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.5-h2d0b736_3.conda
-      - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-24.10.5-hdfd78af_0.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-24.10.5-h2a3209d_1.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openjdk-11.0.9.1-h5cc2fde_1.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-1.1.1w-hd590300_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pcre2-10.43-hcad00b1_0.conda
@@ -86,7 +86,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libssh2-1.11.1-h9cc3647_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libzlib-1.3.1-h8359307_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/ncurses-6.5-h5e97a16_3.conda
-      - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-24.10.5-hdfd78af_0.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-24.10.5-h2a3209d_1.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/openjdk-21.0.0-hed44d8b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/openssl-3.4.1-h81ee809_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.6-hb46c0d2_0.conda
@@ -701,16 +701,16 @@ packages:
   license: X11 AND BSD-3-Clause
   size: 797030
   timestamp: 1738196177597
-- conda: https://conda.anaconda.org/bioconda/noarch/nextflow-24.10.5-hdfd78af_0.tar.bz2
-  sha256: ced885227e39e04154f26a054eeb7ef5a6688560309a6d99ee10715c6aafa6bd
-  md5: 1d40930e4c5fb1aa3a06a0c3e72b61a1
+- conda: https://conda.anaconda.org/bioconda/noarch/nextflow-24.10.5-h2a3209d_1.tar.bz2
+  sha256: 53cbc8549c6a065876e7fb2a29df18b1c5f7bdf69ff1225ba45ef28ac4b8a002
+  md5: b4b35d155f6b8c55e7294e6076332e8e
   depends:
   - coreutils
   - curl
-  - openjdk >=11,<=21
+  - openjdk >=11,<=23
   license: Apache-2.0
-  size: 30957507
-  timestamp: 1741119644280
+  size: 30956817
+  timestamp: 1743176635813
 - conda: https://conda.anaconda.org/conda-forge/linux-64/openjdk-11.0.9.1-h5cc2fde_1.tar.bz2
   sha256: 979700150a39a84beec49db3f3930961ac742de7d0adebe130bec307d6a47eb3
   md5: 173813c547d6b3652fbf1db24cdc0c1b
