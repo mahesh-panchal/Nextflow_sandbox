@@ -6,7 +6,12 @@ platforms = ["linux-64", "osx-arm64"]
 version = "0.1.0"
 
 [tasks]
-clean-all = "rm -rf work/ .nextflow*"
+# Run workflow
+test = "nextflow run main.nf"
+# Restores the git workspace to the last commit.
+reset = "git restore ."
+# Cleans all untracked files and directories, including git ignored files.
+clean-all = "git clean -xfd"
 
 [dependencies]
 nextflow = ">=24.10.5,<25"
