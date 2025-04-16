@@ -8,10 +8,8 @@ version = "0.1.0"
 [tasks]
 # Run workflow
 test = "nextflow run main.nf"
-# Restores the git workspace to the last commit.
-reset = "git restore ."
 # Cleans all untracked files and directories, including git ignored files.
-clean-all = "git clean -fx; git clean -fd; rm -rf work/ .nextflow"
+clean-all = "git restore .; git clean -fx; git clean -fd; rm -rf work/ .nextflow"
 
 [dependencies]
 nextflow = ">=24.10.5,<25"
