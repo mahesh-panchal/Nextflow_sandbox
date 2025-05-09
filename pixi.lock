@@ -179,6 +179,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/textual-0.71.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_h4845f30_101.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tomli-2.2.1-pyhd8ed1ab_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/tree-2.2.1-hb9d3cd8_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/trogon-0.6.0-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typer-0.15.2-pyhff008b6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typer-slim-0.15.2-pyh29332c3_0.conda
@@ -364,6 +365,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/textual-0.71.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-h5083fa2_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tomli-2.2.1-pyhd8ed1ab_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tree-2.2.1-h5505292_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/trogon-0.6.0-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typer-0.15.2-pyhff008b6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/typer-slim-0.15.2-pyh29332c3_0.conda
@@ -3169,6 +3171,25 @@ packages:
   license_family: MIT
   size: 19167
   timestamp: 1733256819729
+- conda: https://conda.anaconda.org/conda-forge/linux-64/tree-2.2.1-hb9d3cd8_0.conda
+  sha256: 737f906d21a3ac03d317a0aaa86f91afd0b87f077f83bcfcc7f3b5466f523690
+  md5: dab87bfc7ce750a1c2d8a68dc2dad2e8
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=13
+  license: GPL-2.0-only
+  license_family: GPL
+  size: 52264
+  timestamp: 1733474145469
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/tree-2.2.1-h5505292_0.conda
+  sha256: 4be2d441ebafd9cc589f177b5169967a32e951850ca70735293ec25856376d3d
+  md5: 689cc78a219d5b123c7e336fac932aef
+  depends:
+  - __osx >=11.0
+  license: GPL-2.0-only
+  license_family: GPL
+  size: 51885
+  timestamp: 1733474210144
 - conda: https://conda.anaconda.org/conda-forge/noarch/trogon-0.6.0-pyhd8ed1ab_1.conda
   sha256: 6e1b46f738d9ea76e95e519fdf192d24b06fa8c0630587d8105f36eed9faa912
   md5: a618b4c62a519a1d8aa805b81b13deca
