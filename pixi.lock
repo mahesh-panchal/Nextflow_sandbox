@@ -113,7 +113,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/markupsafe-3.0.2-py312h178313f_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/mdurl-0.1.2-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.5-h2d0b736_3.conda
-      - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-24.10.6-h2a3209d_0.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-25.04.2-h2a3209d_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/nf-core-3.2.1-pyhdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/nf-test-0.9.2-h2a3209d_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/nodeenv-1.9.1-pyhd8ed1ab_1.conda
@@ -300,7 +300,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/markupsafe-3.0.2-py313ha9b7d5b_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/mdurl-0.1.2-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/ncurses-6.5-h5e97a16_3.conda
-      - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-24.10.6-h2a3209d_0.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-25.04.2-h2a3209d_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/nf-core-3.2.1-pyhdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/nf-test-0.9.2-h2a3209d_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/nodeenv-1.9.1-pyhd8ed1ab_1.conda
@@ -2050,16 +2050,16 @@ packages:
   license: X11 AND BSD-3-Clause
   size: 797030
   timestamp: 1738196177597
-- conda: https://conda.anaconda.org/bioconda/noarch/nextflow-24.10.6-h2a3209d_0.tar.bz2
-  sha256: c30e90da4bdd543031e529ae7eb81d5ccbafa14e7d82086086d595dcd80cad88
-  md5: 95a6ffb27c805e8acec9841ca72d3ec1
+- conda: https://conda.anaconda.org/bioconda/noarch/nextflow-25.04.2-h2a3209d_0.tar.bz2
+  sha256: 6c1208ed00c39ed81d970c2c08d5c21c757c69c44088b76b1eb28addd93f2190
+  md5: 1775d045e1c3e9d30b9f52e83216cad6
   depends:
   - coreutils
   - curl
-  - openjdk >=11,<=23
+  - openjdk >=17,<=24
   license: Apache-2.0
-  size: 30955855
-  timestamp: 1745429125208
+  size: 28573764
+  timestamp: 1747182659518
 - conda: https://conda.anaconda.org/bioconda/noarch/nf-core-3.2.1-pyhdfd78af_0.tar.bz2
   sha256: 1eb629d4d1a684a3e6973b218cecc424051c108a9e0804ea390945050162bed8
   md5: 100ed2acf5e06df4b2abf61c022651ee
