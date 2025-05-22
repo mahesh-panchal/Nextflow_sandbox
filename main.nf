@@ -4,11 +4,11 @@ workflow {
 
 process TASK {
     input:
-    val num
+    val thing
 
     script:
     """
-    echo ${num}
+    echo "${thing}"
     """
 
     output:
