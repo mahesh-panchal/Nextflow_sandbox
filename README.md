@@ -1,20 +1,19 @@
 # A playground for exploring Nextflow and nf-core
 
-This repository is a place to explore Nextflow and nf-core functions in the Gitpod environment.
+This repository is a place to explore Nextflow and nf-core functions in the Devcontainer/Codespaces or local environment.
 
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/mahesh-panchal/Nextflow_sandbox)
-
-This [Gitpod](https://www.gitpod.io/) environment (a docker container) comes installed with:
+The [Devcontainer](https://containers.dev/) environment (a docker container) comes installed with:
 - Git
 - Docker
 - Apptainer
 - Conda
-- Pixi
 - Nextflow
 - nf-core
 - nf-test
 
 The [Dockerfile](https://github.com/nf-core/tools/blob/master/nf_core/gitpod/gitpod.Dockerfile) for this environment lives on nf-core/tools.
+
+Alternatively, you can use [Pixi](https://pixi.sh/) to run Nextflow in a local conda-like environment. You'll need to install a container platform or conda yourself to run workflows with a package manager.
 
 ## Explore
 
@@ -88,7 +87,7 @@ The [Dockerfile](https://github.com/nf-core/tools/blob/master/nf_core/gitpod/git
 
   ```nextflow
   // Try excluding versions.yml from output - Failed
-  process.publishDir = [ path: "results", pattern: "{!versions.yml}" ] 
+  process.publishDir = [ path: "results", pattern: "{!versions.yml}" ]
   ```
 </details>
 <details>
