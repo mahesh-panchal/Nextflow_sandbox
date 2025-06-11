@@ -10,6 +10,8 @@ version = "0.1.0"
 test = "nextflow run main.nf"
 # Cleans all untracked files and directories, including git ignored files.
 clean-all = "git restore .; git clean -fx; git clean -fd; rm -rf work/ .nextflow"
+# Cleans up to the last run.
+clean-work = "nextflow clean -f -before $(nextflow log -q | tail -n 1) && find work -type d -empty -delete"
 
 [dependencies]
 nextflow = ">=25.4.3,<26"
