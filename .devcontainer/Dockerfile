@@ -12,12 +12,9 @@ RUN curl -L -o /usr/local/bin/pixi -fsSL --compressed "https://github.com/prefix
 # Clean up apt cache to keep image size down
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    build-essential \
-    libseccomp-dev \
-    pkg-config \
-    squashfs-tools \
+    apt-transport-https \
+    less \
     wget \
-    git \
     software-properties-common \
     && add-apt-repository -y ppa:apptainer/ppa \
     && apt-get update --quiet \
