@@ -28,8 +28,17 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Set PATH for Conda
+ENV PATH="/opt/conda/bin:$PATH"
+RUN chown -R vscode:vscode /opt/conda
+
 # set some user and workdir settings to work nicely with vscode
 USER vscode
 WORKDIR /home/vscode
+
+# Configure Conda
+RUN conda config --add channels bioconda \
+    && conda config --add channels conda-forge \
+    && conda config --set channel_priority strict
 
 RUN echo 'eval "$(pixi completion -s bash)"' >> /home/vscode/.bashrc
