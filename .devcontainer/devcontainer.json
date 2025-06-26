@@ -1,23 +1,18 @@
 {
-  "name": "nfcore",
-  "image": "nfcore/gitpod:latest",
-  "remoteUser": "gitpod",
-  "runArgs": ["--privileged"],
-  "postCreateCommand": "./.devcontainer/initDevcontainer.sh",
-
-  // Configure tool-specific properties.
-  "customizations": {
-    // Configure properties specific to VS Code.
-    "vscode": {
-      // Set *default* container specific settings.json values on container create.
-      "settings": {
-        "python.defaultInterpreterPath": "/opt/conda/bin/python"
-      },
-
-      // Add the IDs of extensions you want installed when the container is created.
-      "extensions": [
-        "nf-core.nf-core-extensionpack"
-      ]
-    }
-  }
+    "name": "Nextflow_sandbox",
+    "build": {
+      "dockerfile": "Dockerfile",
+      "context": "..",
+    },
+    "customizations": {
+      "vscode": {
+        "settings": {},
+        "extensions": ["ms-python.python", "charliermarsh.ruff", "GitHub.copilot", "nf-core.nf-core-extensionpack"]
+      }
+    },
+    "features": {
+      "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    },
+    "mounts": ["source=${localWorkspaceFolderBasename}-pixi,target=${containerWorkspaceFolder}/.pixi,type=volume"],
+    "postCreateCommand": "sudo chown vscode .pixi && pixi install"
 }
