@@ -11,7 +11,7 @@ test = "nextflow run main.nf"
 # Cleans all untracked files and directories, including git ignored files.
 clean-all = "git restore . && git clean -e .pixi -fdx"
 # Cleans up to the last run.
-clean-work = "nextflow clean -f -before $(nextflow log -q | tail -n 1) && find work -type d -empty -delete"
+clean-work = "nextflow clean -f -before last && find work -type d -empty -delete"
 
 [dependencies]
 nextflow = ">=25.10.0,<26"
