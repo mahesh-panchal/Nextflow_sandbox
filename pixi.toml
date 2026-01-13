@@ -19,3 +19,9 @@ gh = ">=2.83.1,<3"
 nf-core = ">=3.5.1,<4"
 nf-test = ">=0.9.3,<0.10"
 tree = ">=2.2.1,<3"
+
+[feature.seqera-cli.pypi-dependencies]
+seqera = "*"
+
+[environments]
+ai-term = ["seqera-cli"]
