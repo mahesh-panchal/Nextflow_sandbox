@@ -15,6 +15,15 @@ The [Dockerfile](https://github.com/nf-core/tools/blob/master/nf_core/gitpod/git
 
 Alternatively, you can use [Pixi](https://pixi.sh/) to run Nextflow in a local conda-like environment. You'll need to install a container platform or conda yourself to run workflows with a package manager.
 
+The Seqera CLI can also be installed to interact with Seqera's AI services.
+
+```
+pixi shell -e ai-term
+seqera ai --help
+seqera ai /debug
+seqera ai "<query>"
+```
+
 ## Explore
 
 <details>
