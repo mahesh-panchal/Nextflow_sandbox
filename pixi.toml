@@ -14,23 +14,8 @@ clean-all = "git restore . && git clean -e .pixi -fdx"
 clean-work = "nextflow clean -f -before last && find work -type d -empty -delete"
 
 [dependencies]
-nextflow = ">=25.10.3,<26"
-gh = ">=2.86.0,<3"
-nf-core = ">=3.5.1,<4"
-nf-test = ">=0.9.3,<0.10"
-tree = ">=2.2.1,<3"
-
-[feature.seqera-cli.pypi-dependencies]
-seqera = ">=0.2.11, <0.3"
-
-[feature.seqera-cli.tasks]
-# pixi r debug: Ask Seqera to debug the run.
-debug = "seqera ai /debug"
-
-[feature.seqera-cli.tasks.ask-ai]
-# pixi r ask-ai "query": Ask Seqera AI for help.
-args = ["query"]
-cmd = "seqera ai {{ query }}"
-
-[environments]
-ai-term = ["seqera-cli"]
+nextflow = ">=25.10.4,<26"
+gh = ">=2.88.1,<3"
+nf-core = ">=3.5.2,<4"
+nf-test = ">=0.9.4,<0.10"
+tree = ">=2.3.2,<3"
