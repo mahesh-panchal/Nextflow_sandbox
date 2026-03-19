@@ -10,3 +10,11 @@ results/
 # pixi environments
 .pixi
 *.egg-info
+
+# IDEs
+.vscode/
+.idea/
+.zed/
+*.swp
+.antigravity/
+
