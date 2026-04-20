@@ -1,5 +1,7 @@
 # Nextflow Implementation Patterns
 
+<!-- Author: Mahesh Binzer-Panchal -->
+
 A collection of implementation patterns for Nextflow pipelines following DSL2 Strict Syntax and nf-core ecosystem guidelines.
 
 <!-- This callout is placed at the top intentionally: LLMs weight early context more heavily,
