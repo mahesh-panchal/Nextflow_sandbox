@@ -720,6 +720,61 @@ Channel.from(1, 2, 3).map { it * 2 }
 channel.of(1, 2, 3).map { num -> num * 2 }
 ```
 
+### No import statements
+
+In Groovy, the `import` declaration can be used to import external classes. In Nextflow, use the fully qualified name to reference the class.
+
+```nextflow
+// ❌ Not allowed in strict syntax
+import groovy.json.JsonSlurper
+
+// ✅ Use fully qualified class names
+def slurper = new groovy.json.JsonSlurper()
+```
+
+### No spread operator
+
+In Groovy, the spread operator flattens a nested list. In Nextflow, use list concatenation instead.
+
+```nextflow
+// ❌ Spread operator not allowed
+ch.map { meta, bambai -> [meta, *bambai] }
+
+// ✅ Use list concatenation
+ch.map { meta, bambai -> [meta] + bambai }
+```
+
+### No `switch` statements
+
+`switch` statements and `switch` expressions are deprecated in Nextflow. Use an `if-else` chain in place of `switch` statements
+and map-based choice for `switch` expressions.
+
+```nextflow
+// ❌ switch not allowed in strict syntax
+switch (aligner) {
+    case 'bowtie2': // ...
+    case 'bwamem':  // ...
+}
+
+// ✅ if-else chain
+if (aligner == 'bowtie2') { ... }
+else if (aligner == 'bwamem') { ... }
+
+// ✅ Map-based choice (see Groovy Patterns section)
+def presets = [bowtie2: '--very-sensitive', bwamem: '-M']
+def args = presets[aligner] ?: ''
+```
+
+### Process `env` inputs/outputs must use quotes
+
+```nextflow
+// ❌ Unquoted env name
+input: env FOO
+
+// ✅ Quoted env name
+input: env 'FOO'
+```
+
 ---
 
 ## 🔗 Joins and Data Merging
