@@ -85,6 +85,8 @@ These are tricky behaviors that catch even experienced Nextflow developers. Each
 ### Queue vs Value Channel Semantics
 
 `💡 Convention` — Queue channels are implicitly forked in DSL2, and consume values to make inputs. **value channels** can be reused for every downstream consumer.
+The `channel.value(file(...))` pattern is a `🎨 Preference` for single reference files. For globbing multiple files (e.g., `channel.fromPath('data/*.fastq.gz')`),
+`fromPath` is the preferred approach.
 
 ```nextflow
 // 👁️ channel.value() creates a value channel — safe to reuse across processes
@@ -309,6 +311,22 @@ process {
     withName: MY_PROCESS    { ext.args = '--sensitive' }   // 👁️ This wins
 }
 ```
+
+### Subworkflow vs Process Input Type Handling
+
+`💡 Convention` — Objects passed to **subworkflows** pass through as-is with no type conversion. This is important because it preserves types: param submaps, plain lists, and non-channel objects arrive in the subworkflow exactly as sent.
+
+Objects passed to **processes**, however, are **implicitly converted to value channel inputs** if they aren't already channels. This means a bare file path or a map passed directly to a process becomes a value channel automatically.
+
+```nextflow
+// 👁️ Subworkflow: objects pass through unchanged — types preserved
+MY_SUBWORKFLOW(ch_reads, params.options)  // params.options arrives as a Map, not a channel
+
+// 👁️ Process: non-channel objects are implicitly wrapped in channel.value()
+MY_PROCESS(ch_reads, file(params.reference, checkIfExists: true))    // params.reference becomes channel.value(file(params.reference, checkIfExists: true))
+```
+
+This distinction matters when passing param submaps through subworkflows to processes — the subworkflow sees the raw object, while the process receives it as a value channel.
 
 ---
 
@@ -1839,7 +1857,10 @@ process ASSEMBLY {
 
 ## 📤 Publication Patterns
 
-Modern Nextflow uses `publish:` labels in the workflow block paired with an `output {}` block to control where files are published. This replaces `publishDir` in process definitions.
+Modern Nextflow uses `publish:` labels in the workflow block paired with an `output {}` block to control where files are published.
+`publishDir` is still a valid pattern, especially for pipelines not yet using the `output {}` block. When using `publishDir`, configure
+it in `modules.config` via `withName:` selectors — not inside the process definition itself. This keeps processes portable and publishing
+decisions centralized..
 
 ### Workflow Output with Output Block
 
@@ -2181,7 +2202,7 @@ Markers: `⚠️` = causes bugs/failures, `💡` = convention/best practice, `�
 
 - [ ] `💡` `publish:` labels + `output {}` block
 - [ ] `💡` Index samplesheets: For staged execution
-- [ ] `💡` No `publishDir` in processes
+- [ ] `💡` No `publishDir` in process definitions: Use `output {}` block, or configure `publishDir` in `modules.config`
 
 ### Testing
 
