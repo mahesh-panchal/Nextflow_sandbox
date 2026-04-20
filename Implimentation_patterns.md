@@ -1862,7 +1862,7 @@ process ASSEMBLY {
 Modern Nextflow uses `publish:` labels in the workflow block paired with an `output {}` block to control where files are published.
 `publishDir` is still a valid pattern, especially for pipelines not yet using the `output {}` block. When using `publishDir`, configure
 it in `modules.config` via `withName:` selectors — not inside the process definition itself. This keeps processes portable and publishing
-decisions centralized..
+decisions centralized.
 
 ### Workflow Output with Output Block
 
