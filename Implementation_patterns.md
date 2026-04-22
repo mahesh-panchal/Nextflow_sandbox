@@ -516,7 +516,8 @@ validateParameters()
 
 ### Mistake: Using `when:` for Conditional Process Execution
 
-`💡 Convention` — The `when:` directive seems natural for conditionally skipping a process, but is unofficially deprecated.
+`💡 Convention` — The `when:` directive seems natural for conditionally skipping a process, but is unofficially deprecated. 
+`when: task.ext.when == null || task.ext.when` is however still used across nf-core compatible modules, to cater for an edge-case.
 
 Use workflow-level `if` blocks or channel operators (`filter`, `branch`) instead.
 
