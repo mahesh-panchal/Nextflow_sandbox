@@ -1090,9 +1090,8 @@ process TOOL_SORT {
 
 ### Mahesh Style: Local Module Structure `🎨 Preference`
 
-Local (pipeline-specific) modules can use **Mahesh style** (named after Mahesh Binzer-Panchal), which sets `ext` defaults directly in the process directive block. This eliminates the need for `?: ''` fallbacks since default values are guaranteed. The `when: task.ext.when` guard is simpler because `ext when: true` provides the default.
-
-Mahesh style formatting is available as a VS Code setting in the Nextflow extension, which also places `output:` after `script:` and `stub:` blocks — grouping execution logic together with structural/metadata declarations at the end. Most readers will be more familiar with output-before-script ordering, so the remaining examples in this document use the conventional order.
+Local (pipeline-specific) modules can use **Mahesh style** (named after Mahesh Binzer-Panchal), which places `output:` after `script:` and `stub:` blocks — grouping execution logic together with structural/metadata declarations at the end. Most readers will be more familiar with output-before-script ordering, so the remaining examples in this document use the conventional order. Mahesh style formatting is available as a VS Code setting in the Nextflow extension.
+This style can also feature `ext` defaults directly in the process directive block (credit to Nicolas Vannieuwkerke). This eliminates the need for `?: ''` fallbacks since default values are guaranteed. The `when: task.ext.when` guard is simpler because `ext when: true` provides the default.
 
 ```nextflow
 process DATA_PROCESS {
