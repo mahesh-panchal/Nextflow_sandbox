@@ -2343,11 +2343,11 @@ process TASK {
 ### Bash escaping
 
 ```nextflow
-// ✅
+// ✅ meta.id is interpolated by Nextflow; PWD by Bash
 """
 echo "${meta.id}" ; echo "\${PWD}"
 """
-// ❌
+// ❌ PWD is interpolated by Nextflow
 """
 OUTDIR="${PWD}/results"
 """
@@ -2358,7 +2358,7 @@ OUTDIR="${PWD}/results"
 ```nextflow
 // ✅
 def basename = myfile.getBaseName(myfile.name.endsWith('.gz') ? 2 : 1)
-// ❌
+// ❌ (for .gz, .bgz, .bz2 files)
 def basename = myfile.getBaseName()
 ```
 
