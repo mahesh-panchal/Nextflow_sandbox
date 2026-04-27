@@ -15,7 +15,7 @@ clean-work = "nextflow clean -f -before last && find work -type d -empty -delete
 
 [dependencies]
 nextflow = ">=25.10.4,<26"
-gh = ">=2.88.1,<3"
+gh = ">=2.91.0,<3"
 nf-core = ">=3.5.2,<4"
 nf-test = ">=0.9.5,<0.10"
 tree = ">=2.3.2,<3"
