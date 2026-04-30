@@ -14,8 +14,8 @@ clean-all = "git restore . && git clean -e .pixi -fdx"
 clean-work = "nextflow clean -f -before last && find work -type d -empty -delete"
 
 [dependencies]
-nextflow = ">=25.10.4,<26"
-gh = ">=2.91.0,<3"
-nf-core = ">=3.5.2,<4"
+nextflow = ">=26.4.0,<27"
+gh = ">=2.92.0,<3"
+nf-core = ">=4.0.0,<5"
 nf-test = ">=0.9.5,<0.10"
 tree = ">=2.3.2,<3"
