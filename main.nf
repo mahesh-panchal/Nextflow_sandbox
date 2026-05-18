@@ -1,5 +1,7 @@
 workflow {
-    TASK(1).view()
+    def ch_in = channel.of(1)
+    def prc_task = TASK(ch_in)
+    prc_task.stdout.view()
 }
 
 process TASK {
@@ -8,9 +10,12 @@ process TASK {
 
     script:
     """
-    echo "${thing}"
+    cat <<-END_FILE | tee response.txt
+    content: ${thing}
+    END_FILE
     """
 
     output:
-    stdout
+    path "response.txt", emit: txt
+    stdout emit: stdout
 }
