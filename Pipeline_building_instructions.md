@@ -3,6 +3,14 @@
 
 ---
 
+## Scope
+
+This protocol governs production pipelines (`[PATH-A]`/`[PATH-B]`/`[PATH-C]`) and reproducibility refactors (`[PATH-R]`, Phase 0.9).
+
+It does not apply to **exploratory analysis** — writing analysis incrementally in `main.nf`, adding processes one at a time, relying on `-resume` to avoid re-running completed steps. For that: no PLAN.md, no Standing Orders, no nf-test. Just write the process, run it, add the next one.
+
+---
+
 ## STANDING ORDERS — Read Before Any Other Action
 
 These rules override every other instruction in this document.
@@ -76,7 +84,7 @@ SO-13 TOOL ISOLATION.   Two distinct categories of tools exist:
 
                         DEVELOPMENT TOOLS — tools used by the development
                         environment (nextflow, nf-core, nf-test, jq,
-                        pre-commit, git, etc.). These CAN and SHOULD be
+                        prek, git, etc.). These CAN and SHOULD be
                         managed by pixi when CMD_PREFIX = pixi run.
 
                         Classify the tool before resolving any missing-tool
@@ -113,9 +121,9 @@ SO-16 COMMIT CADENCE.   Commit to git at each of these points only:
                           "docs: add development plan"
                         - After scaffold passes -stub validation:
                           "feat: scaffold complete — all stubs wired and -stub passing"
-                        - After each nf-core module installed:
-                          "feat: install nf-core/<tool>/<subcommand>"
-                        - After each nf-core module patched:
+                        - After each module installed:
+                          "feat: install <scope>/<tool>/<subcommand>"
+                        - After each nf-core module patched (PATH-A only):
                           "fix: patch nf-core/<tool>/<subcommand> — <reason>"
                         - After each local module real nf-test passes:
                           "feat: implement <tool> module — nf-test passing"
@@ -126,15 +134,17 @@ SO-16 COMMIT CADENCE.   Commit to git at each of these points only:
                         - After PLAN.md is updated mid-development:
                           "docs: update PLAN.md — <what changed>"
 
-SO-17 MODULE INFO.      For every local module, the programmer must supply
+SO-17 MODULE INFO.      For every local module, the programmer must confirm
                         the following before the real script: block can be
                         written:
-                        (a) Exact conda package specification
+                        (a) Conda package specification — the model may
+                            propose a starting point; the programmer
+                            confirms or corrects it.
                         (b) Docker container URI with full tag and build hash
                         (c) Singularity container URI
                         (d) Tool CLI usage example or link to documentation
 
-                        Never guess, infer, or construct these values.
+                        Never guess, infer, or construct (b) or (c).
                         A stub placeholder must be used until all four are
                         supplied. See Phase 3.5.11 for how the programmer
                         finds this information.
@@ -159,6 +169,24 @@ SO-18 TODO MARKERS.     Every section of generated code or configuration that
 
                         Programmers should search for "TODO" in all generated
                         files to find every item requiring attention.
+
+SO-19 SECRETS.          A module needing a credential (API key, password,
+                        token) never gets it hardcoded into `script:`,
+                        `ext.args`, or any committed config file — not even
+                        as a placeholder value. Use Nextflow's secrets store:
+                          nextflow secrets set MY_API_KEY '<value>'
+                        Declare and reference it in the process:
+                          secret 'MY_API_KEY'
+                          script:
+                          """
+                          your_command --token \$MY_API_KEY
+                          """
+                        Escape with `\$`, not `${MY_API_KEY}` — unescaped
+                        interpolation bakes the value into `.command.sh`,
+                        visible in the work directory and any published logs.
+                        If a module needs a credential, surface it to the
+                        programmer the same way as SO-17 module info. Never
+                        ask the user to paste a real credential into the chat.
 ```
 
 ---
@@ -211,6 +239,9 @@ Evaluate in order. Stop at the first row where every condition is true.
 ┌────────────────────────────────────────────────────────┬────────────┐
 │ ALL of these conditions are true                       │ PATH_LABEL │
 ├────────────────────────────────────────────────────────┼────────────┤
+│ Existing non-Nextflow analysis code present            │            │
+│ (scripts/notebooks/HPC job scripts) AND no .nf files   │ [PATH-R]?  │
+├────────────────────────────────────────────────────────┼────────────┤
 │ .nf-core.yml EXISTS                                    │            │
 │ modules.json EXISTS                                    │ [PATH-A]   │
 │ subworkflows/nf-core/ POPULATED                        │            │
@@ -227,19 +258,23 @@ Evaluate in order. Stop at the first row where every condition is true.
 └────────────────────────────────────────────────────────┴────────────┘
 ```
 
+PATH-R is never auto-confirmed. Ask: *"This looks like existing analysis code rather than a Nextflow pipeline — is the goal to reproduce it as a containerized pipeline?"* Yes → Phase 0.9 (skip 0.3–0.7). No → fall through to the next row.
+
 Inform the user of the finding and ask them to confirm.
 
 **What each path means:**
 
-| | `[PATH-A]` | `[PATH-B]` | `[PATH-C]` |
-|---|---|---|---|
-| Structure | nf-core template | Custom, you design it | Custom, you design it |
-| Main workflow file | `workflows/<name>.nf` | `main.nf` | `main.nf` |
-| `nf-core modules install` | Yes | Yes | **No** |
-| `nf-core lint` | Required at each stage | Not required | Not required |
-| `nextflow_schema.json` | `nf-core schema build --no-prompts` | Maintain manually | Maintain manually |
-| Git | Auto by `nf-core pipelines create` | Your choice | Your choice |
-| Container engine | `-profile docker/singularity/conda` at runtime | Same | Same |
+| | `[PATH-A]` | `[PATH-B]` | `[PATH-C]` | `[PATH-R]` |
+|---|---|---|---|---|
+| Structure | nf-core template | Custom, you design it | Custom, you design it | Wrap existing code as-is — see Phase 0.9 |
+| Main workflow file | `workflows/<name>.nf` | `main.nf` | `main.nf` | `main.nf` |
+| Module install command  | `nf-core modules install` | `nf-core modules install` | **No** | **No** |
+| `nf-core lint` | Required at each stage | Not required | Not required | Not required |
+| `nextflow_schema.json` | `nf-core schema build --no-prompts` | Maintain manually | Maintain manually | Often skipped — inputs are usually plain file paths |
+| Git | Auto by `nf-core pipelines create` | Your choice | Your choice | Your choice |
+| Container engine | `-profile docker/singularity/conda` at runtime | Same | Same | Same |
+
+`nf-core modules install` is preferred over the native `nextflow module install` on both PATH-A and PATH-B: only `nf-core modules patch` can track and reapply local modifications to an installed module. The native `nextflow module` command has no equivalent.
 
 If **ASK USER**, ask Q1 (nf-core compliant?) → Q2 (nf-core registry modules?) → Q3 (fully custom?).
 
@@ -303,8 +338,20 @@ Resume point:              Phase [N] — [description]
 | Module info supplied, real test failing | Phase 5.1 Step 4 — fix the test |
 | All module tests pass, subworkflow test failing | Phase 5.2 — fix subworkflow test |
 | All subworkflow tests pass, end-to-end failing | Phase 6 |
+| Everything passing, user requests a new stage or feature | Phase 0.2c — this is not a resume, scope the addition |
 
 >> CHECKPOINT: State PATH_LABEL, CMD_PREFIX, STAGES before writing anything.
+
+---
+
+### 0.2c Adding to a Completed Pipeline
+
+Not a resume — every existing stage's tests already pass. Treat the addition as its own scaffold-then-implement cycle (SO-11), scoped to only the new work:
+
+1. Add the new stage/tool to PLAN.md's **STAGES** and to Stage Development Status as a new entry. Existing stages are not touched.
+2. Run Phase 0.4b's Connection Interface Audit only for the new stage's boundary with the pipeline it's joining — apply SO-15 if the new stage's input/output doesn't obviously match the existing stage it connects to.
+3. Scaffold and implement the new stage exactly as Phase 5.0–5.2 describe, as if it were the only stage being added.
+4. Re-run the full end-to-end test (Phase 6.6) once the new stage's own tests pass — adding a stage changes the overall pipeline graph, so a passing end-to-end test before the addition doesn't guarantee one after.
 
 ---
 
@@ -335,7 +382,7 @@ If notebook: which log/metric files should be collected?
 4. Expected outputs?
 5. Tools needed? For each: nf-core module known to exist?
 6. Any in-house scripts or tools unavailable in Bioconda/Biocontainers?
-7. Where will this pipeline run?
+7. Where will this pipeline run? Record the nf-core/configs institutional profile name if one exists (`https://nf-co.re/configs`) — compute target is not custom-templated, it's selected at runtime with `-profile <institution>`.
 8. Development shell managed by Pixi? (Yes → `CMD_PREFIX = pixi run`; No → `CMD_PREFIX = (none)`)
 9. Reporting question (above).
 
@@ -356,7 +403,7 @@ Sets B and C follow the same pattern without the pipeline name question (Set C a
 
 ### 0.4b Connection Interface Audit
 
-**Run before writing PLAN.md.** For every directed process-to-process connection, list it and classify as CLEAR / VERIFY / GAP. Consult Phase 3.5.7.
+For every process-to-process connection already known from the plan or diagram, list it and classify as CLEAR / VERIFY / GAP. Consult Phase 3.5.7.
 
 ```
 CONNECTION INTERFACE AUDIT
@@ -368,7 +415,7 @@ Upstream           Output format/ext   Downstream         Input format/ext
 ──────────────────────────────────────────────────────────────────────────
 ```
 
-Apply SO-15 for every VERIFY or GAP row before Phase 0.7. Record all resolutions. Re-run whenever a process is added. The file extensions from this table are used directly in stub output globs — use specific extensions, not wildcards.
+Apply SO-15 immediately for any VERIFY or GAP row found here. This audit does not need to be exhaustive before PLAN.md — most plans and diagrams describe stages, not every process boundary. Connections not yet visible at this stage are expected to surface later, while wiring subworkflows in Phase 5.0 Step 5; SO-15 applies there too, at the point a gap is actually discovered. Record all resolutions, wherever they happen. The file extensions from this table are used directly in stub output globs — use specific extensions, not wildcards.
 
 ---
 
@@ -406,7 +453,7 @@ STAGES (in order):
   [stage]            modules: [list with nf-core / local label]
                      output schema columns: [list]
 Stage schemas:       [shared / per-stage]
-Compute target:      [local / SLURM / PBS / cloud]
+Compute target:      [local / nf-core/configs institution profile name / none available]
 
 Connection interfaces:
   [PROCESS_A] → [PROCESS_B]  [ext]→[ext]  CLEAR / resolved ([a/b/c])
@@ -417,6 +464,75 @@ Local modules (info required from programmer before implementation):
 ```
 
 >> CHECKPOINT: Do not create any file until the user confirms this summary.
+
+---
+
+## Phase 0.9: Reproducibility Refactor — `[PATH-R]`
+
+Replaces Phases 0.3–6 for this path. Commit cadence (SO-16) and TODO markers (SO-18) still apply unchanged.
+
+A PLAN.md must still exist (SO-12), but Phase 2's template is written for PATH-A/B/C and doesn't fit: skip Module Specifications, Scaffold Status, and Stage Development Status. Track per step instead: the original script/file, its dependency inputs (0.9.1), manual intervention points found and which signal caught them (0.9.2), and the container decision — resolvable via conda, or its own container (0.9.3). If resuming a PATH-R project in a later session, use this per-step tracking to find where work left off — Phase 0.2b's Resume Point Rules table doesn't apply here, it's keyed to scaffold/module/subworkflow test status that this path doesn't have.
+
+**Goal:** make existing, already-working analysis code (scripts, notebooks, HPC module-based jobs) run the same way it did originally, containerized. This is not a redesign — idiomatic per-tool modules, nf-core module reuse, `arity`/`ext.args` conventions, and full semantic understanding of the code are explicitly out of scope for this pass. Do not propose idiomatic modularization unprompted.
+
+### 0.9.1 Code Audit
+
+1. Read the existing code. Report: what it does, what's broken or missing, apparent execution order.
+2. Build a dependency map between scripts (which script's output feeds which script's input) — same purpose as Phase 0.4b's Connection Interface Audit, reverse-engineered from code instead of designed from a diagram.
+
+### 0.9.2 Manual Intervention Detection
+
+Every manual intervention point found becomes an explicit input to the downstream step that depended on it — never an implicit assumption.
+
+| Signal | What it catches |
+|---|---|
+| Filename forensics — files with unusual names, or a trailing `2`/copy marker | A human re-ran or intervened partway, leaving a trace in the data directory |
+| Documentation/code references to a GUI or manual tool | A step that can't be automated the same way |
+| conda/mamba solve failure when bundling a step's tools into one environment | A genuine tool conflict the original human avoided by staging execution across HPC module loads |
+
+### 0.9.3 Container Policy
+
+Every tool the original code used — including ones compiled locally or installed into a script's own `bin/` — must be either resolvable via conda/mamba (Seqera Containers), or packaged into its own separate container. There is no third option: an untracked local install is not left as-is.
+
+A conda/mamba solve failure when bundling a step's tools is itself the signal to split that step into a separate process/container — it mirrors how the original human avoided the same conflict by switching HPC modules partway through.
+
+### 0.9.4 Bootstrap
+
+Same bootstrap as `[PATH-C]` (Phase 1) — fully custom, no nf-core modules. Wire one process per original script/step (or per group of steps that share a resolvable environment) directly into `main.nf`, following the dependency map from 0.9.1. Splits identified in 0.9.2/0.9.3 become process boundaries.
+
+### 0.9.5 Wrapper Process Template
+
+Minimal restructuring of the original script. One container per step, not one per tool.
+
+```nextflow
+process WRAP_ORIGINAL_STEP {
+    tag "${meta.id}"
+
+    // TODO [REQUIRED]: conda/container covering every tool this step's
+    //   original script used — see 0.9.3. Split into a separate process
+    //   if mamba cannot solve one environment for all of them.
+    conda "TODO"
+    container "TODO"
+
+    input:
+    tuple val(meta), path(step_inputs)
+    // TODO [REQUIRED]: add one input per manual-intervention point found
+    //   in 0.9.2 — never assume a file materialised by an untracked manual step.
+
+    output:
+    tuple val(meta), path("*"), emit: step_output
+
+    script:
+    """
+    # TODO [FILL-IN]: original script body, minimally adapted —
+    #   do not refactor tool logic in this pass.
+    """
+}
+```
+
+### 0.9.6 Validation
+
+No nf-test files are written for this path — nf-test is for production pipelines (`[PATH-A]`/`[PATH-B]`/`[PATH-C]`) only. Output-equivalence-by-diff against the original is often impractical anyway (original runs can take days on a cluster). Confirm instead: (a) the pipeline runs to completion, (b) every input identified in 0.9.2 is explicitly wired, nothing implicit. If a small subset of the original input is cheap enough to re-run and diff, do it — otherwise this is an accepted, undiffed risk, and should be recorded as such in PLAN.md Notes.
 
 ---
 
@@ -622,12 +738,12 @@ touch main.nf nextflow.config conf/base.config conf/modules.config conf/test.con
 
 ## Overview
 - **Pipeline:** [description]
-- **PATH_LABEL:** [PATH-A / PATH-B / PATH-C]
+- **PATH_LABEL:** [PATH-A / PATH-B / PATH-C / PATH-R]
 - **CMD_PREFIX:** [pixi run / (none)]
 - **WORKFLOW_FILE:** [workflows/<name>.nf or main.nf]
-- **SAMPLESHEET_FORMAT:** [csv / yaml]
-- **REPORTING:** [multiqc / notebook / none]
-- **Compute target:** [local / SLURM / PBS / cloud]
+- **SAMPLESHEET_FORMAT:** [csv / yaml / N/A for PATH-R]
+- **REPORTING:** [multiqc / notebook / none / N/A for PATH-R]
+- **Compute target:** [local / nf-core/configs institution profile name / none available]
 
 ## Reporting
 - **Mechanism:** [multiqc / notebook / none]
@@ -760,6 +876,7 @@ Each process that accepts arguments has a placeholder.
 - [ ] `nextflow lint <WORKFLOW_FILE>` passes
 - [ ] `nf-core lint` passes  (PATH-A only)
 - [ ] `nf-core schema build --no-prompts` current  (PATH-A only)
+- [ ] README.md, docs/usage.md, docs/output.md updated to describe the actual pipeline, not template placeholders  (PATH-A only)
 - [ ] End-to-end nf-test passing
 
 ## Synthetic Test Data
@@ -794,17 +911,7 @@ git add PLAN.md && git commit -m "docs: add development plan"
 
 ## Phase 3: Critical DSL2 Reference
 
-### 3.1 DSL1 Patterns to Never Use
-
-| Concept | Never write | Write this instead |
-|---|---|---|
-| Input | `file x from some_channel` | `path x` in `input:` |
-| Output | `file 'out.txt' into result_ch` | `path 'out.txt', emit: result` |
-| Process names | `lowercase_names` | `UPPER_SNAKE_CASE` |
-| Channel creation | `Channel.from(...)` | `channel.of(...)` |
-| DSL declaration | `nextflow.enable.dsl=2` | Not needed |
-
----
+General Nextflow/Groovy syntax, conventions, and pitfalls — DSL1 migration, the meta map, value vs queue channels, static typing readiness, Groovy falsy values and closure rules, channel operators (`join`/`combine`/`branch`/`mix`), `bin/` scripts — are covered in `Implementation_patterns.md`. Read that first; this phase covers only what's specific to this protocol.
 
 ### 3.2 Process Anatomy — Fully Implemented Local Module
 
@@ -918,69 +1025,6 @@ process TOOLNAME_SUBCOMMAND {
 
 ---
 
-### 3.3 The Meta Map
-
-```nextflow
-ch_reads = channel.of(
-    [ [id: 'sampleA', single_end: false], [file('A_R1.fastq.gz'), file('A_R2.fastq.gz')] ],
-    [ [id: 'sampleB', single_end: true],  file('B.fastq.gz') ]
-)
-```
-
-- `meta.id` always present
-- Every output tuple carries `meta` first — never drop it
-- `meta + [new_key: value]` to extend without losing existing fields
-- `tag "${meta.id}"` in every process
-
----
-
-### 3.4 Value vs Queue Channels
-
-| Property | Queue Channel | Value Channel |
-|---|---|---|
-| Consumed | Once | Never |
-| Created by | `channel.of()`, `channel.fromPath()`, `channel.fromList()` | `channel.value()`, `.collect()` |
-| Use for | Per-sample data | Shared references |
-
-```nextflow
-ch_fasta = channel.value(file(params.genome_fasta, checkIfExists: true))
-ch_index = channel.fromPath("${params.index_dir}/*").collect()
-```
-
----
-
-### 3.5 Optional Inputs — Empty List Pattern
-
-```nextflow
-ch_known_variants = channel.value(
-    params.known_variants ? file(params.known_variants, checkIfExists: true) : []
-)
-// In process script:
-def known_variants_arg = known_variants ? "--known-variants ${known_variants}" : ''
-```
-
----
-
-### 3.6 Essential Channel Operators
-
-All closure parameters must be named. Never use implicit `it`. Prefix unused ones with `_`.
-
-```nextflow
-ch_bam.join(ch_bai, by: [0])
-ch_samples.combine(ch_reference)
-ch_reads.map { meta, reads -> [ meta + [processed: true], reads ] }
-ch_branched = ch_reads.branch { meta, _reads ->
-    paired: !meta.single_end
-    single:  meta.single_end
-}
-ch_a.mix(ch_b)
-```
-
-`collect()` on empty → no emission; flattens nested lists.
-`toList()` on empty → emits `[]`; preserves nesting.
-
----
-
 ### 3.7 Variable Scoping in Workflow Blocks
 
 **Binding variables for inter-stage results** — initialise to `null` before conditionals; do NOT use `def` on the assignment inside the `if` block:
@@ -1024,33 +1068,15 @@ workflow {
 
 ---
 
-### 3.8 Static Typing Readiness
-
-| Pattern | Avoid | Use instead |
-|---|---|---|
-| Channel assignment | `.set { ch }` | `ch = channel.of(...)` |
-| Process output in pipeline code | `PROCESS.out.bam` (unassigned) | `r = PROCESS(ch); r.bam` |
-| Subworkflow output | `SW.out.reads` (unassigned) | `sw = SW(ch); sw.reads` |
-| Pipe operator | `ch \| PROCESS \| view` | `r = PROCESS(ch); r.view()` |
-| Cross-product input | `each method` qualifier | `.combine(methods)` |
-| Iteration | `for (s in list)` | `channel.fromList(list)` |
-| Implicit variable | `.map { it * 2 }` | `.map { val -> val * 2 }` |
-| Switch | `switch (x) { ... }` | `if/else` or map lookup |
-| Import | `import groovy.json.JsonSlurper` | `new groovy.json.JsonSlurper()` |
-| Spread | `[meta, *files]` | `[meta] + files` |
-
-**`.out` in pipeline code:** assign first. `r = PROCESS(ch)` then `r.bam`.
-**`.out` in nf-test:** `process.out.xxx` and `workflow.out.xxx` are the nf-test API — correct inside `then { }`.
-
----
+**Reminder — nf-test is the one exception to static typing avoidance:** `process.out.xxx` and `workflow.out.xxx` are the nf-test API and are correct inside `then { }`, even though unassigned `.out` access is avoided everywhere else (see `Implementation_patterns.md`).
 
 ### 3.9 Optional Process Outputs
 
 ```nextflow
 output:
-tuple val(meta), path("*.bam"),                                    emit: bam
-tuple val(meta), path("*.merged.fastq.gz", optional: true),        emit: merged
-tuple val(meta), path("*.fail.fastq.gz",   optional: true),        emit: reads_fail
+tuple val(meta), path("*.bam"),             emit: bam
+tuple val(meta), path("*.merged.fastq.gz"), emit: merged,     optional: true
+tuple val(meta), path("*.fail.fastq.gz"),   emit: reads_fail, optional: true
 ```
 
 ---
@@ -1088,22 +1114,6 @@ samtools sort -m ${mem_gb}G --threads ${task.cpus} -o ${prefix}.bam ${input}
 java -Xmx${mem_gb}g -jar tool.jar --input ${input} --output ${prefix}.out
 """
 ```
-
----
-
-### 3.13 Common Groovy Pitfalls
-
-**Falsy values:** `0`, `0.0`, `""`, `[]`, `null` — use `!= null` when 0 or "" are valid.
-**Dynamic directives need braces:** `memory { 8.GB * task.attempt }`.
-**Bash in `"""`:** escape with `\${VAR}`, `\$(cmd)`.
-**Double extensions:** `f.getBaseName(f.name.endsWith('.gz') ? 2 : 1)`.
-**Always `def`** in closures and script blocks.
-
----
-
-### 3.14 The `bin/` Directory
-
-Valid shebang (`#!/usr/bin/env python3`), executable (`chmod +x`), call by filename only.
 
 ---
 
@@ -1170,6 +1180,8 @@ merge_out = MERGE_VCF(ch_gathered)
 ---
 
 ### 3.5.5 Conditional Index Building
+
+Any process producing an expensive, reusable artifact — a genome index, k-mer index, contamination-screening database, anything costly enough to want to skip recomputing — should accept a parameter to supply a precomputed version instead of always rebuilding it. `-resume` only helps within a single run directory; it does not carry over when a new analysis attempt starts in a fresh directory (a common pattern: numbered attempt folders, each a full run). An overridable parameter is what actually avoids redundant recomputation across attempts.
 
 ```nextflow
 if (params.genome_index) {
@@ -1316,17 +1328,17 @@ if ("clean" in params.stages) {
 
 ### 3.5.11 Finding Container and Conda Package Information
 
-**This section is for the programmer to run — not the model.** The model cannot fetch current package versions, build hashes, or container URIs (SO-17).
+**Steps 2–3 are for the programmer to run — not the model.** The model cannot fetch current build hashes or container URIs (SO-17).
 
-**Step 1 — Find the conda package:**
+**Step 1 — Propose the conda package:**
+
+The model may propose `bioconda::<toolname>=<version>` as a starting point. The programmer confirms or corrects it — check with:
 
 ```bash
 conda search -c bioconda -c conda-forge <toolname>
 # or
 pixi search <toolname>
 ```
-
-Record: `bioconda::<toolname>=<version>`
 
 **Step 2 — Find the BioContainers Docker image:**
 
@@ -1364,6 +1376,16 @@ Docker:      biocontainers/toolname:1.2.3--h1234567_0
 Singularity: https://depot.galaxyproject.org/singularity/toolname:1.2.3--h1234567_0
 CLI example: toolname subcommand --input in.bam --output out.bam --threads 4
 ```
+
+---
+
+### 3.5.11b Container Bundling Strategy
+
+Default: one tool per container/conda environment, one module per tool.
+
+Bundle more than one tool into a single container only when doing so gives a genuine resource benefit — typically, piping one tool's output directly into another without staging an intermediate file to disk. `bwa` piped into `samtools sort`/`samtools view` is the canonical example: always bundle these rather than writing an unsorted SAM/BAM to disk between two separate processes.
+
+R and Python analysis scripts are the routine exception, not a special case to justify: they depend on multiple libraries rather than a single CLI tool, so their conda spec naturally lists every package the script imports, not one package.
 
 ---
 
@@ -1416,27 +1438,19 @@ process {
 
 #### Script path resolution
 
-nf-test resolves `script` paths relative to the `tests/` directory root (the value of `testsDir` in `nf-test.config`), not relative to the individual test file's location.
+nf-test resolves `script` paths relative to the test file's own location, not the `tests/` directory root. Count one `../` per directory level between the test file and the project root, then descend into the target.
 
 | Test file | Target `.nf` file | Correct `script` path |
 |---|---|---|
 | `tests/main.nf.test` | `main.nf` at project root | `"../main.nf"` |
-| `tests/modules/local/<tool>/main.nf.test` | `modules/local/<tool>/main.nf` | `"../modules/local/<tool>/main.nf"` |
-| `tests/subworkflows/local/<stage>/main.nf.test` | `subworkflows/local/<stage>/main.nf` | `"../subworkflows/local/<stage>/main.nf"` |
+| `tests/modules/local/<tool>/main.nf.test` | `modules/local/<tool>/main.nf` | `"../../../../modules/local/<tool>/main.nf"` |
+| `tests/subworkflows/local/<stage>/main.nf.test` | `subworkflows/local/<stage>/main.nf` | `"../../../../subworkflows/local/<stage>/main.nf"` |
 
-All paths use `../` to navigate from the `tests/` root up to the project root, then down to the target file.
+Pipeline tests are conventionally placed directly in `tests/` because it keeps the `script` path simple (`"../main.nf"`). A pipeline test can be nested in a subdirectory as long as the path is adjusted to match the extra depth.
 
-**Pipeline tests must be placed directly in `tests/`**, not in a subdirectory. Placing a pipeline test in `tests/pipeline/main.nf.test` causes path resolution to behave differently and may not find the target file.
+#### `workflow.trace.*`
 
-#### `workflow.trace.*` is not supported
-
-Tracing is disabled by nf-test. Using `workflow.trace.succeeded()` or `workflow.trace.failed()` throws a runtime error:
-
-```
-java.lang.RuntimeException: Error: Tracing is disabled. `workflow.trace` is not supported.
-```
-
-Assert output file existence instead of trace counts.
+`workflow.trace.succeeded()` and `workflow.trace.failed()` work with no special configuration. Tracing only becomes unavailable when the test execution environment lacks `procps` (some minimal containers) or when it is explicitly disabled (`withTrace = false` in `nf-test.config`, or `nf-test test --without-trace`). In those cases, assert output file existence instead of trace counts.
 
 #### Warnings from nf-core template modules
 
@@ -1449,6 +1463,20 @@ Warning: Module /path/to/.pixi/.../subworkflows/nf-core/utils_nextflow_pipeline/
 
 These are **harmless**. They come from nf-core template subworkflows installed in the pixi environment that have test stubs referencing their own source files. They do not affect your pipeline's tests.
 
+#### Debugging a failed real nf-test
+
+A real (non-`-stub`) nf-test failure prints the task's work directory directly in its output — this is **not** the plain `work/` a normal `nextflow run` produces, it's nested under `.nf-test/`:
+
+```
+Work dir:
+  .nf-test/tests/<test-hash>/work/<xx>/<yyyyyyyy...>
+
+Tip: you can replicate the issue by changing to the process work dir
+and entering the command `bash .command.run`
+```
+
+Inspect it the same way as any Nextflow work directory (`.command.sh`, `.command.err`, `.command.out`) — see `Implementation_patterns.md`'s Debugging section. `.nf-test/tests/<test-hash>/meta/nextflow.log` has the full run log for that specific test.
+
 ---
 
 ## Phase 4: nf-schema — Validation and Samplesheet Handling
@@ -1460,10 +1488,12 @@ plugins { id 'nf-schema@2.3.0' }
 ```
 
 ```nextflow
-include { samplesheetToList; validateParameters } from 'plugin/nf-schema'
+include { samplesheetToList; validateParameters; paramsHelp } from 'plugin/nf-schema'
 ```
 
 Check the nf-schema releases page for the latest stable version.
+
+`params.help` in the config (Phase 7) is declared but inert on its own — `paramsHelp()` does not stop execution by itself and must be checked explicitly in the main workflow (see 6.3). Optionally add `validation { help { enabled = true } }` to `nextflow.config` for nicer auto-formatted help output.
 
 ---
 
@@ -1556,11 +1586,13 @@ The scaffold contains:
 
 ### 5.0 Scaffold Sequence
 
-Work through these steps in order. Complete the full scaffold before presenting it to the programmer.
+Work through these steps in order, with one exception: Steps 2 and 4 are templates, not upfront passes over every local module. The actual trigger for both is inline, inside Step 5 — see the note at the start of Step 5. Complete the full scaffold before presenting it to the programmer.
 
-#### Step 1 — Install all nf-core modules
+#### Step 1 — Install all modules
 
-For each nf-core module in PLAN.md across all stages:
+For each module in PLAN.md across all stages, use the appropriate command for your PATH:
+
+**PATH-A and PATH-B (nf-core registry modules) — use `nf-core modules install`:**
 
 ```bash
 nf-core modules list remote | grep -i <toolname>
@@ -1570,13 +1602,17 @@ nf-core modules list local
 nf-core modules install <tool>/<subcommand>
 ```
 
+Prefer `nf-core modules install` over the native `nextflow module install` on both paths — only `nf-core modules patch` can track and reapply local edits to an installed module.
+
+**PATH-C (fully custom) — no module installation.**
+
 Commit each install (SO-16). If `jq` is missing and CMD_PREFIX = pixi run: `pixi add jq`.
 
-**Do not write nf-test files for installed nf-core modules** — they have upstream CI tests.
+**Do not write nf-test files for upstream-installed modules** — they have their own CI tests.
 
-#### Step 2 — Create all local module stubs
+#### Step 2 — Create a local module stub (template — triggered inline from Step 5)
 
-For each local module in PLAN.md, create `modules/local/<tool>/main.nf` using Phase 3.2b. Use the file extensions from the Connection Interface Audit in output patterns and `touch` commands — not generic wildcards.
+Not an upfront pass over every module in PLAN.md. Create one of these the moment Step 5's subworkflow wiring hits a gap no installed module covers: `modules/local/<tool>/main.nf` using Phase 3.2b. Use the file extensions from the Connection Interface Audit in output patterns and `touch` commands — not generic wildcards.
 
 ```bash
 ${CMD_PREFIX} nextflow lint modules/local/<tool>/main.nf
@@ -1628,11 +1664,11 @@ echo "Test data created."
 bash tests/create_test_data.sh
 ```
 
-#### Step 4 — Write all module nf-test files
+#### Step 4 — Write a module nf-test file (template — triggered inline from Step 5)
 
-Write a single `.nf.test` file per local module containing a stub test and an implementation template. Also write a per-test-directory `nextflow.config` for each module to support params-based `ext.args` injection.
+Not an upfront pass over every module. Write one of these immediately after each Step 2 stub is created: a single `.nf.test` file per local module containing a stub test and an implementation template, plus a per-test-directory `nextflow.config` for params-based `ext.args` injection.
 
-**Note on script paths:** All `script` paths in nf-test files are resolved relative to the `tests/` directory root. Use `"../modules/local/<tool>/main.nf"` to navigate from `tests/` up to the project root and then down to the module file. See Phase 3.5.12 for the full path resolution rules.
+**Note on script paths:** `script` paths in nf-test files are resolved relative to the test file's own location. From `tests/modules/local/<tool>/main.nf.test`, use `"../../../../modules/local/<tool>/main.nf"`. See Phase 3.5.12 for the full path resolution rules.
 
 **`tests/modules/local/<tool>/nextflow.config`:**
 
@@ -1653,8 +1689,8 @@ process {
 nextflow_process {
 
     name "Test TOOLNAME_SUBCOMMAND"
-    // Path relative to tests/ directory root — ../ navigates to project root
-    script "../modules/local/<tool>/main.nf"
+    // Path relative to this test file's own location
+    script "../../../../modules/local/<tool>/main.nf"
     process "TOOLNAME_SUBCOMMAND"
 
     // ─── STUB TEST ────────────────────────────────────────────────────────
@@ -1705,9 +1741,6 @@ nextflow_process {
     //
     // Version capture (works regardless of tool name):
     //   process.out.findAll { key, val -> key.startsWith('versions') }
-    //
-    // NOTE: workflow.trace.* is NOT supported by nf-test — do not use
-    //   workflow.trace.succeeded() or workflow.trace.failed()
 
     test("synthetic - fastq_gz - single end") {
 
@@ -1823,7 +1856,7 @@ nextflow_process {
     //
     // setup {
     //     run("PREREQUISITE_PROCESS") {
-    //         script "../prerequisite_tool/main.nf"
+    //         script "../../../../modules/local/prerequisite_tool/main.nf"
     //         process {
     //             """
     //             input[0] = channel.value(
@@ -1850,7 +1883,7 @@ nextflow_process {
 
 #### Step 5 — Write all stage subworkflow files
 
-For each stage, create `subworkflows/local/<stage_name>/main.nf`. Wire all modules in the correct order from the Connection Interface Audit. Apply SO-15 if any gap is found. Only include `multiqc_files` emit when REPORTING = multiqc and the stage contains tools with MultiQC-compatible output.
+For each stage, create `subworkflows/local/<stage_name>/main.nf`, wiring installed modules (Step 1) in connection order. Most gaps aren't known upfront — they surface here, while wiring. The moment one does (a needed piece of functionality has no installed module and no existing local module): apply SO-15, then immediately create that module's stub (Step 2) and its stub nf-test (Step 4) before continuing to wire this subworkflow. Only include `multiqc_files` emit when REPORTING = multiqc and the stage contains tools with MultiQC-compatible output.
 
 ```nextflow
 // subworkflows/local/clean_data/main.nf
@@ -1903,8 +1936,8 @@ Write stub and implementation nf-tests for each subworkflow. Also write a per-te
 nextflow_workflow {
 
     name "Test CLEAN_DATA"
-    // Path relative to tests/ directory root
-    script "../subworkflows/local/clean_data/main.nf"
+    // Path relative to this test file's own location
+    script "../../../../subworkflows/local/clean_data/main.nf"
     workflow "CLEAN_DATA"
 
     // ─── STUB TEST ────────────────────────────────────────────────────────
@@ -1939,9 +1972,6 @@ nextflow_workflow {
     // Complete after all local modules in this stage have passing real nf-tests.
     // Remove options "-stub", fill in assertions, then run:
     //   nf-test test tests/subworkflows/local/<stage>/main.nf.test --profile docker
-    //
-    // NOTE: workflow.trace.* is NOT supported — do not use
-    //   workflow.trace.succeeded() or workflow.trace.failed()
 
     test("synthetic - fastq_gz - two samples") {
 
@@ -1965,20 +1995,8 @@ nextflow_workflow {
         then {
             assertAll(
                 { assert workflow.success },
-                // TODO [FILL-IN]: Replace with assertions about real output content.
-                //
-                // Check emit sizes:
-                //   { assert workflow.out.reads.size() == 2 }
-                //   { assert workflow.out.json.size() == 2 }
-                //
-                // Snapshot stable emits + versions:
-                //   { assert snapshot(
-                //       workflow.out.reads,
-                //       workflow.out.findAll { key, val -> key.startsWith('versions') }
-                //   ).match() }
-                //
-                // Assert existence of unstable outputs only:
-                //   { assert path(workflow.out.html[0][1]).exists() }
+                // TODO [FILL-IN]: Same assertion menu as Step 4's module tests —
+                //   swap process.out for workflow.out (e.g. workflow.out.reads.size() == 2).
                 { assert snapshot(
                     workflow.out.findAll { key, val -> key.startsWith('versions') }
                 ).match() }
@@ -2028,7 +2046,7 @@ process {
 
 #### Step 8 — Write the end-to-end test
 
-The end-to-end pipeline test lives directly in `tests/` (not in a subdirectory) and uses `script "../main.nf"` to navigate from the `tests/` root up to the project root. See Phase 3.5.12 for the explanation of why this placement is required.
+The end-to-end pipeline test lives directly in `tests/`, keeping its `script` path a simple `"../main.nf"`. See Phase 3.5.12 for the path resolution rule.
 
 **`tests/main.nf.test`:**
 
@@ -2036,8 +2054,7 @@ The end-to-end pipeline test lives directly in `tests/` (not in a subdirectory) 
 nextflow_pipeline {
 
     name "End-to-end pipeline test"
-    // Pipeline test MUST be in tests/ directly (not a subdirectory).
-    // Path resolved from tests/ root: ../ navigates to project root.
+    // Path relative to this test file's own location
     script "../main.nf"
 
     // ─── STUB TEST ────────────────────────────────────────────────────────
@@ -2058,9 +2075,7 @@ nextflow_pipeline {
         then {
             assertAll(
                 { assert workflow.success }
-                // NOTE: workflow.trace.* is NOT supported by nf-test.
-                // Assert output files exist instead:
-                //   { assert path("${outputDir}").isDirectory() }
+                // { assert path("${outputDir}").isDirectory() }
             )
         }
     }
@@ -2069,9 +2084,6 @@ nextflow_pipeline {
     // Complete after all stage subworkflow nf-tests pass.
     // Remove options "-stub", fill in assertions, then run:
     //   nf-test test tests/main.nf.test --profile docker
-    //
-    // NOTE: workflow.trace.* is NOT supported — do not use
-    //   workflow.trace.succeeded() or workflow.trace.failed()
 
     test("synthetic - samplesheet - full pipeline") {
 
@@ -2095,9 +2107,6 @@ nextflow_pipeline {
                 //   { assert path("${outputDir}/trimmed").isDirectory() }
                 //   { assert path("${outputDir}/trimmed/cleaned_fastq.csv").exists() }
                 //   { assert path("${outputDir}/pipeline_info/software_versions.txt").exists() }
-                //
-                // Do NOT use workflow.trace.succeeded() or workflow.trace.failed()
-                // — tracing is disabled in nf-test.
                 { assert snapshot(workflow.out).match() }
             )
         }
@@ -2153,6 +2162,7 @@ Present the scaffold to the programmer:
 > - `tests/modules/local/*/nextflow.config` — per-test ext.args binding
 > - `tests/subworkflows/local/*/main.nf.test` — stub test + implementation template
 > - `tests/create_test_data.sh` — generates synthetic test data
+> - `.github/workflows/ci.yml`, `.pre-commit-config.yaml` — PATH-B/C only; PATH-A has these from the wizard already
 >
 > **Search all files for `TODO`** to find every item requiring your attention.
 > The PLAN.md Programmer Handover section lists the recommended order of work.
@@ -2310,7 +2320,7 @@ Run after all stage subworkflow nf-tests pass.
 All includes use `../` prefix:
 
 ```nextflow
-include { samplesheetToList; validateParameters } from 'plugin/nf-schema'
+include { samplesheetToList; validateParameters; paramsHelp } from 'plugin/nf-schema'
 include { CLEAN_DATA      } from '../subworkflows/local/clean_data/main'
 include { ALIGNMENT       } from '../subworkflows/local/alignment/main'
 include { VARIANT_CALLING } from '../subworkflows/local/variant_calling/main'
@@ -2321,7 +2331,7 @@ include { VARIANT_CALLING } from '../subworkflows/local/variant_calling/main'
 ### 6.2 PATH-B/C — `main.nf`
 
 ```nextflow
-include { samplesheetToList; validateParameters } from 'plugin/nf-schema'
+include { samplesheetToList; validateParameters; paramsHelp } from 'plugin/nf-schema'
 include { CLEAN_DATA      } from './subworkflows/local/clean_data/main'
 include { ALIGNMENT       } from './subworkflows/local/alignment/main'
 include { VARIANT_CALLING } from './subworkflows/local/variant_calling/main'
@@ -2335,6 +2345,12 @@ include { VARIANT_CALLING } from './subworkflows/local/variant_calling/main'
 workflow {
 
     main:
+    // paramsHelp() does not stop execution by itself — exit here explicitly.
+    if (params.help) {
+        log.info paramsHelp("nextflow run ${workflow.manifest.name ?: 'main.nf'} --input samplesheet.csv")
+        exit 0
+    }
+
     validateParameters()
 
     ch_reads = samplesheet_to_channel(params.input)
@@ -2448,9 +2464,21 @@ ${CMD_PREFIX} nf-core lint
 ${CMD_PREFIX} nf-core schema build --no-prompts
 ```
 
+A `nf-core lint` failure that is a legitimate false positive for this pipeline's design (e.g., a template file was deliberately removed) is waived in `.nf-core.yml`, not worked around structurally:
+
+```yaml
+repository_type: pipeline
+lint:
+    actions_awsfulltest: False   # example: disable a whole check
+    files_exist:
+        - CODE_OF_CONDUCT.md     # example: skip one file from a check
+```
+
+Never disable a check to hide a real problem — only to waive a check that doesn't apply to this pipeline's deliberate design. Record the reason in PLAN.md Notes.
+
 ### 6.6 Run the End-to-End Test
 
-Remove `-stub` from the real execution test. Fill in parameter paths and output assertions. Remember: do not use `workflow.trace.*` — assert output file existence instead.
+Remove `-stub` from the real execution test. Fill in parameter paths and output assertions.
 
 ```bash
 ${CMD_PREFIX} nf-test test tests/main.nf.test --update-snapshot --profile docker
@@ -2474,9 +2502,15 @@ rsync -av --progress \
     results/ user@remote:/path/to/results/
 ```
 
+### 6.8 Versioning and Release — `[PATH-A]` only
+
+Once the pipeline reaches a stable point worth tagging, use `nf-core pipelines bump-version <version>` rather than editing the version by hand — it appears in multiple files and `bump-version` updates all of them consistently. Versions are strictly numeric (`1.0.0`, not `v1.0.0` or `1.0.0rc1`) per semantic versioning. Update `CHANGELOG.md` (Keep a Changelog format) with what changed before tagging.
+
 ---
 
 ## Phase 7: Configuration Reference
+
+These templates are for `[PATH-B]`/`[PATH-C]`. PATH-A already has its own `nextflow.config`, `conf/base.config`, `conf/modules.config`, `conf/test.config`, and `nf-test.config` from the `nf-core pipelines create` wizard — edit those to match this pipeline's specifics rather than overwriting them with the templates below.
 
 ### `nextflow.config`
 
@@ -2492,12 +2526,23 @@ params {
     genome_fasta = null
     genome_index = null
     help         = false
+
+    // Institutional config options — see includeConfig below.
+    custom_config_version = 'master'
+    custom_config_base    = "https://raw.githubusercontent.com/nf-core/configs/${params.custom_config_version}"
 }
 
 process.shell = ["bash", "-C", "-e", "-u", "-o", "pipefail"]
 
 includeConfig 'conf/base.config'
 includeConfig 'conf/modules.config'
+
+// Compute target (SLURM/PBS/cloud) is not templated in this file — it comes
+// from nf-core/configs institutional profiles, selected at runtime with
+// -profile <institution>. See https://nf-co.re/configs for the list.
+includeConfig !System.getenv('NXF_OFFLINE') && params.custom_config_base
+    ? "${params.custom_config_base}/nfcore_custom.config"
+    : "/dev/null"
 
 profiles {
     test        { includeConfig 'conf/test.config' }
@@ -2584,11 +2629,63 @@ config {
     // Snapshots live in snap/ subdirectories alongside each .nf.test file.
     // Always commit snap/ directories to git — they are the regression baseline.
     //
-    // Script paths in .nf.test files are resolved relative to the testsDir root.
-    // All paths use ../ to navigate from tests/ up to the project root.
-    // See Phase 3.5.12 for the full path resolution rules.
+    // Script paths in .nf.test files are resolved relative to the test
+    // file's own location. See Phase 3.5.12 for the full rules.
 }
 ```
+
+---
+
+### `.github/workflows/ci.yml` — `[PATH-B]`/`[PATH-C]` only
+
+PATH-A gets CI for free from the `nf-core pipelines create` wizard. PATH-B/C build an nf-test suite with nothing to run it automatically — without this, tests only run when a human remembers to.
+
+```yaml
+name: CI Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Nextflow
+        uses: nf-core/setup-nextflow@v2
+        with:
+          version: "25.10.0"
+
+      - name: Install nf-test
+        run: |
+          wget -qO- https://get.nf-test.com | bash
+          sudo mv nf-test /usr/local/bin/
+
+      - name: Run nf-test
+        run: nf-test test --ci -profile test,docker
+```
+
+---
+
+### `.pre-commit-config.yaml` — `[PATH-B]`/`[PATH-C]` only
+
+PATH-A gets this from the wizard. Catches formatting issues cheaply, before lint does. nf-core/tools 4.0+ runs this file with **prek**, not `pre-commit` — a Rust, dependency-free, drop-in replacement that reads the same `.pre-commit-config.yaml` format and hook repos.
+
+```yaml
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.2.5
+    hooks:
+      - id: prettier
+```
+
+*(Pixi only)* `pixi add prek && pixi run prek install` — installs the git hook so it runs on every commit, not just when invoked manually.
 
 ---
 
@@ -2598,17 +2695,18 @@ config {
 
 | Rule | Applies to | Reason |
 |---|---|---|
-| Do not guess conda specs, container URIs, or build hashes | All | SO-17. Wrong values silently pull incorrect software. |
+| Do not guess container URIs or build hashes | All | SO-17. Wrong values silently pull incorrect software. Conda specs may be proposed by the model, but still need programmer confirmation. |
 | Do not write a real `script:` block before module info is supplied | All | SO-17. Use stub until info is supplied. |
 | Do not begin module implementation before the scaffold `-stub` run passes | All | SO-11. |
 | Do not treat a module as done before its real nf-test passes | All | SO-11. |
 | Do not treat a stage as done before its subworkflow real nf-test passes | All | SO-11. |
 | Do not run nf-test without `tests/nextflow.config` present | All | nf-test exits immediately with an error if this file is absent. |
-| Do not place the pipeline end-to-end test in a subdirectory of `tests/` | All | Script path resolution for `nextflow_pipeline` tests only works reliably when the test file is directly in `tests/`. |
-| Do not use `workflow.trace.succeeded()` or `workflow.trace.failed()` | All | Tracing is disabled by nf-test — these throw a runtime error. Assert output file existence instead. |
+| Do not use `workflow.trace.*` without checking `procps` is available in the test container | All | Trace works by default, but is unavailable in containers lacking `procps`, or when explicitly disabled (`withTrace = false`, `--without-trace`). |
 | Do not run nf-test on a file with outstanding lint errors | All | SO-14. |
 | Do not write any `.nf` file before PLAN.md exists | All | SO-12. |
 | Do not install pipeline tools via pixi | All | SO-13. They come from `conda`/`container` directives. |
+| Do not hardcode a credential into `script:`, `ext.args`, or committed config | All | SO-19. Use `nextflow secrets` and the `secret` directive instead. |
+| Do not interpolate a secret with `${NAME}` in `script:` | All | SO-19. Bakes the value into `.command.sh`. Escape as `\$NAME`. |
 | Do not write nf-test files for installed nf-core modules | All | They have upstream CI tests. |
 | Do not write bare `assert` statements in `then` blocks | All | All assertions must be inside `assertAll({ }, { })` — every assertion is evaluated and reported even if one fails earlier. |
 | Do not snapshot unstable outputs (logs with timestamps, images, paths) | All | Snapshots of unstable content fail non-deterministically. Assert `.exists()` or `.name` instead. |
@@ -2631,17 +2729,19 @@ config {
 | Do not use a pipeline name outside `^[a-z]+$` | PATH-A | nf-core enforces this. |
 | Do not manually edit `modules.json` | PATH-A, B | nf-core CLI only. |
 | Do not edit `modules/nf-core/**` without `nf-core modules patch` | PATH-A, B | Unpatched edits silently overwritten. |
-| Do not run `nf-core modules install` | PATH-C | No infrastructure files present. |
+| Do not run `nf-core modules install` | PATH-C | PATH-C uses no nf-core registry modules at all. |
 | Do not use `nf-core schema build` without `--no-prompts` | PATH-A | Use `--no-prompts` to avoid an interactive browser session. |
+| Do not propose idiomatic per-tool modularization | PATH-R | Goal is behavioral equivalence to the original, not idiomatic design — see Phase 0.9. |
+| Do not leave an untracked local tool install as-is | PATH-R | Must resolve via conda/mamba or move into its own container — see 0.9.3. |
+| Do not write nf-test files | PATH-R | nf-test is for production pipelines only — see 0.9.6. |
 
 ### Always Do These
 
 | Rule | Reason |
 |---|---|
 | Always create `tests/nextflow.config` during scaffold | nf-test exits with an error if this file is absent, even if empty. |
-| Always place pipeline end-to-end tests in `tests/main.nf.test` directly | Script path resolution for `nextflow_pipeline` tests works reliably only when the test is directly in `tests/`. |
-| Always use `"../path/to/file.nf"` as the script path in nf-test files | Paths are resolved from the `tests/` directory root — `../` navigates up to the project root. |
-| Always assert output file existence instead of using `workflow.trace.*` | `workflow.trace.succeeded()` and `workflow.trace.failed()` throw runtime errors — tracing is disabled. |
+| Always place pipeline end-to-end tests in `tests/main.nf.test` directly | Keeps the `script` path simple (`"../main.nf"`) — see 3.5.12 for the actual resolution rule. |
+| Always count `../` in a `script` path to match the test file's real nesting depth | Paths resolve relative to the test file's own location, not the `tests/` directory root. |
 | Always wrap every `then` assertion in `assertAll({ }, { })` | Every assertion is evaluated and reported; one failure does not hide others. |
 | Always complete the full scaffold before any implementation | SO-11 and SO-18. Complete deliverable to programmer first. |
 | Always use Phase 3.2b stubs until module info is supplied | Keeps scaffold runnable; makes missing info obvious via TODO markers. |
@@ -2663,9 +2763,10 @@ config {
 | Always surface Open Questions immediately and wait for resolution | Do not continue with an unresolved gap. |
 | Always run `nextflow lint` before nf-test | SO-14. Errors block; warnings go to PLAN.md. |
 | Always run `nf-core lint` after each stage on PATH-A | Catches structural issues early. |
+| Always update README.md/docs/usage.md/docs/output.md before considering PATH-A complete | Template placeholders describe a generic pipeline, not this one — `nf-core lint` checks for their presence, not that they're accurate. |
 | Always commit at the prescribed points | SO-16. |
 | Always classify a missing tool before resolving | SO-13. |
-| Always check `nf-core modules info` before writing any module call | Argument count and types vary between modules. |
+| Always check module info before writing any module call | Argument count and types vary between modules. Use `nf-core modules info` (PATH-A, PATH-B). |
 | Always use `def` inside closures and `script:` blocks | Prevents global scope leaks. |
 | Always initialise binding variables to `null` before conditionals | Static typing compatibility; use `!= null` for checks. |
 | Always use `channel.empty()` for channel accumulators, `null` for result bindings | These serve different purposes and are not interchangeable. |
@@ -2676,8 +2777,26 @@ config {
 | Always name all closure parameters; `_`-prefix unused ones | Required for static typing. |
 | Always validate pipeline name against `^[a-z]+$` before the wizard | The wizard rejects non-conforming names. |
 | Always `cd` into the directory created by `nf-core pipelines create` | All paths are relative to that directory. |
-| Always run the two-step module search before writing a local module | Reveals which subcommands exist in the registry. |
-| Always run `nf-core modules patch` immediately after editing `modules/nf-core/**` | Unpatched edits are lost on the next update. |
+| Always run the two-step module search before writing a local module | Reveals which subcommands exist in the registry. Use `nf-core modules list remote` (PATH-A, PATH-B). |
+| Always run `nf-core modules patch` immediately after editing `modules/nf-core/**` (PATH-A only) | Unpatched edits are lost on the next update. For PATH-B, manually patch installed module files in the Nextflow cache. |
+| Always turn a manual intervention point into an explicit input | PATH-R. See 0.9.2 — nothing downstream may assume a file materialised by an untracked manual step. |
+
+---
+
+## Reviewer Checklist
+
+PLAN.md's Scaffold Status is the model's own self-reported progress — not independent verification. Run these yourself; a claimed pass is not a verified pass.
+
+- [ ] `nextflow lint` actually passes on every `.nf` file — rerun it
+- [ ] `nextflow run <WORKFLOW_FILE> -stub -profile test` actually passes — rerun it
+- [ ] `grep -r "TODO" .` shows only items you expect still open — nothing was silently resolved without you seeing it
+- [ ] Every local module's `conda`/`container` line matches what *you* supplied — diff against what you gave the model
+- [ ] Container URIs actually resolve (`docker pull` / `singularity pull`, or check the registry page) — a plausible-looking tag can still be wrong
+- [ ] `nf-test test tests/**/*.nf.test --profile docker` actually passes — rerun it
+- [ ] `git log`/`git diff` matches the claimed commit-cadence messages — no undisclosed changes bundled into a commit
+- [ ] The versions output file is populated with real tool versions, not leftover stub placeholders (`stub-version-0.0.0`)
+- [ ] `grep -rn "secret\|api_key\|password\|token" --include=*.nf --include=*.config .` shows no hardcoded credential values — only `secret '<NAME>'` directives
+- [ ] PATH-R only: every manual-intervention point (0.9.2) is wired as an explicit input, not silently assumed
 
 ---
 
@@ -2688,7 +2807,8 @@ START: Audit → read PLAN.md → detect PATH_LABEL
   │
   ├─ PATH-A: main logic in workflows/<name>.nf, not main.nf
   ├─ PATH-B: main logic in main.nf
-  └─ PATH-C: main logic in main.nf, no nf-core commands
+  ├─ PATH-C: main logic in main.nf, no nf-core commands
+  └─ PATH-R: wrap existing code as-is — see Phase 0.9, skips 0.3–6
 
 ────────────────────────────────────────────────────────────────
 TWO-PHASE DEVELOPMENT (SO-11)
@@ -2713,16 +2833,16 @@ NF-TEST CRITICAL REQUIREMENTS
   tests/nextflow.config MUST EXIST — nf-test exits without it:
     Error: Test config file '.../tests/nextflow.config' not found
 
-  Pipeline test location: tests/main.nf.test (NOT in a subdirectory)
+  Pipeline test location: tests/main.nf.test (convention, not required)
 
-  Script path resolution (all paths relative to tests/ root):
-    tests/main.nf.test                           → script "../main.nf"
-    tests/modules/local/<tool>/main.nf.test      → script "../modules/local/<tool>/main.nf"
-    tests/subworkflows/local/<stage>/main.nf.test → script "../subworkflows/local/<stage>/main.nf"
+  Script path resolution (relative to the test file's own location):
+    tests/main.nf.test                            → script "../main.nf"
+    tests/modules/local/<tool>/main.nf.test       → script "../../../../modules/local/<tool>/main.nf"
+    tests/subworkflows/local/<stage>/main.nf.test → script "../../../../subworkflows/local/<stage>/main.nf"
 
-  workflow.trace.* is NOT supported:
-    ❌ workflow.trace.succeeded().size() >= 1   → RuntimeException
-    ❌ workflow.trace.failed().size() == 0      → RuntimeException
+  workflow.trace.* works by default. Unavailable only if the test
+  container lacks procps, or tracing is explicitly disabled
+  (withTrace = false, --without-trace) — fall back to:
     ✅ assert path("${outputDir}/trimmed").isDirectory()
     ✅ assert path("${outputDir}/file.csv").exists()
 
@@ -2743,13 +2863,13 @@ TODO SYSTEM (SO-18)
 ────────────────────────────────────────────────────────────────
 MODULE INFO PROTOCOL (SO-17)
 
-  Programmer supplies before model implements:
-    conda:       bioconda::toolname=1.2.3
+  Programmer confirms before model implements:
+    conda:       bioconda::toolname=1.2.3   (model may propose, then confirm)
     Docker:      biocontainers/toolname:1.2.3--h1234567_0
     Singularity: https://depot.galaxyproject.org/singularity/...
     CLI example: toolname sub --input in.bam --output out.bam
 
-  Never guess. See Phase 3.5.11 for how to find these.
+  Never guess Docker/Singularity URIs or build hashes. See Phase 3.5.11.
 
 ────────────────────────────────────────────────────────────────
 NF-TEST PATTERNS
@@ -2802,7 +2922,7 @@ NF-TEST PATTERNS
   Setup blocks for prerequisite processes:
     setup {
         run("PREREQUISITE") {
-            script "../prereq/main.nf"
+            script "../../../../modules/local/prereq/main.nf"
             process { """ input[0] = [...] """ }
         }
         // Alias to avoid name conflicts:
