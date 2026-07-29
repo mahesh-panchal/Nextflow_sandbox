@@ -1,3 +1,4 @@
+// Sandbox baseline — `pixi run clean-all` restores this exact file.
 workflow {
     def ch_in = channel.of(1)
     def prc_task = TASK(ch_in)

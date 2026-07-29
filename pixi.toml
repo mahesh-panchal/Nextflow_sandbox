@@ -8,7 +8,7 @@ version = "1.0"
 [tasks]
 # pixi r test: Run workflow
 test = "nextflow run main.nf"
-# pixi r clean-all: Cleans all untracked files and directories, including git ignored files.
+# pixi r clean-all: Discards uncommitted changes and removes all untracked/ignored files (except .pixi).
 clean-all = "git restore . && git clean -e .pixi -fdx"
 # pixi r clean-work: Cleans up to the last run.
 clean-work = "nextflow clean -f -before last && find work -type d -empty -delete"
