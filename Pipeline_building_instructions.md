@@ -1,5 +1,5 @@
 # Nextflow Workflow Development Protocol
-**Minimum supported Nextflow version: 25.10.0**
+**Minimum supported Nextflow version: 25.10.0** — needed for stable `output {}`/`index {}` blocks (Phase 6.4).
 
 ---
 
@@ -123,7 +123,7 @@ SO-16 COMMIT CADENCE.   Commit to git at each of these points only:
                           "feat: scaffold complete — all stubs wired and -stub passing"
                         - After each module installed:
                           "feat: install <scope>/<tool>/<subcommand>"
-                        - After each nf-core module patched (PATH-A only):
+                        - After each nf-core module patched (PATH-A, B):
                           "fix: patch nf-core/<tool>/<subcommand> — <reason>"
                         - After each local module real nf-test passes:
                           "feat: implement <tool> module — nf-test passing"
@@ -469,7 +469,7 @@ Local modules (info required from programmer before implementation):
 
 ## Phase 0.9: Reproducibility Refactor — `[PATH-R]`
 
-Replaces Phases 0.3–6 for this path. Commit cadence (SO-16) and TODO markers (SO-18) still apply unchanged.
+Replaces Phases 0.3–6 for this path, except Phase 1's bootstrap commands (reused directly in 0.9.4). Commit cadence (SO-16) and TODO markers (SO-18) still apply unchanged.
 
 A PLAN.md must still exist (SO-12), but Phase 2's template is written for PATH-A/B/C and doesn't fit: skip Module Specifications, Scaffold Status, and Stage Development Status. Track per step instead: the original script/file, its dependency inputs (0.9.1), manual intervention points found and which signal caught them (0.9.2), and the container decision — resolvable via conda, or its own container (0.9.3). If resuming a PATH-R project in a later session, use this per-step tracking to find where work left off — Phase 0.2b's Resume Point Rules table doesn't apply here, it's keyed to scaffold/module/subworkflow test status that this path doesn't have.
 
@@ -1588,6 +1588,8 @@ The scaffold contains:
 
 Work through these steps in order, with one exception: Steps 2 and 4 are templates, not upfront passes over every local module. The actual trigger for both is inline, inside Step 5 — see the note at the start of Step 5. Complete the full scaffold before presenting it to the programmer.
 
+PATH-A: `nf-core pipelines create` already generates `tests/nextflow.config`, `conf/test.config`, a stub `tests/main.nf.test`, and `.github/workflows/ci.yml`. Steps 3, 7, and 8 edit these to fit this pipeline rather than starting from scratch.
+
 #### Step 1 — Install all modules
 
 For each module in PLAN.md across all stages, use the appropriate command for your PATH:
@@ -1596,7 +1598,7 @@ For each module in PLAN.md across all stages, use the appropriate command for yo
 
 ```bash
 nf-core modules list remote | grep -i <toolname>
-nf-core modules list remote --json | jq '.[] | select(startswith("<toolname>/"))'
+nf-core modules list remote --json | jq '.[] | select(. == "<toolname>" or startswith("<toolname>/"))'
 nf-core modules info <tool>/<subcommand>   # read carefully before writing any call
 nf-core modules list local
 nf-core modules install <tool>/<subcommand>
@@ -2778,7 +2780,7 @@ repos:
 | Always validate pipeline name against `^[a-z]+$` before the wizard | The wizard rejects non-conforming names. |
 | Always `cd` into the directory created by `nf-core pipelines create` | All paths are relative to that directory. |
 | Always run the two-step module search before writing a local module | Reveals which subcommands exist in the registry. Use `nf-core modules list remote` (PATH-A, PATH-B). |
-| Always run `nf-core modules patch` immediately after editing `modules/nf-core/**` (PATH-A only) | Unpatched edits are lost on the next update. For PATH-B, manually patch installed module files in the Nextflow cache. |
+| Always run `nf-core modules patch` immediately after editing `modules/nf-core/**` (PATH-A, B) | Unpatched edits are lost on the next update. Same command and mechanism on both paths — modules installed via `nf-core modules install` live in the project's own `modules/nf-core/`, not a separate cache, regardless of PATH-A/B. |
 | Always turn a manual intervention point into an explicit input | PATH-R. See 0.9.2 — nothing downstream may assume a file materialised by an untracked manual step. |
 
 ---
