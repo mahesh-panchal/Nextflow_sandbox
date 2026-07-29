@@ -24,9 +24,9 @@ Install [Pixi](https://pixi.sh/), then run `pixi install` to get the same Nextfl
 ### Running things
 
 ```bash
-pixi run test        # runs `nextflow run main.nf`
+pixi run test         # runs `nextflow run main.nf`
 pixi run clean-work   # cleans up to the last run
-pixi run clean-all    # discards uncommitted changes and removes all untracked/ignored files (except the Pixi environment)
+pixi run clean-all    # discards uncommitted changes and resets project to last commit.
 ```
 
 ## Reference documents
