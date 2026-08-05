@@ -147,7 +147,10 @@ SO-17 MODULE INFO.      For every local module, the programmer must confirm
                         Never guess, infer, or construct (b) or (c).
                         A stub placeholder must be used until all four are
                         supplied. See Phase 3.5.11 for how the programmer
-                        finds this information.
+                        finds this information — including Step 4, where the
+                        model itself may build a verified container via
+                        Seqera Containers/Wave when no BioContainers image
+                        exists, rather than waiting on the programmer.
 
                         This rule does not apply to nf-core installed modules.
 
@@ -604,6 +607,18 @@ ls workflows/
 
 Record the workflow filename as **WORKFLOW_FILE**.
 
+> [!warning] **Hyphenated pipeline names break workflow parsing, not just lint**
+> If PIPELINE_NAME is kebab-case (e.g. `spatial-vdj`), `nf-core pipelines create`
+> generates workflow identifiers with the hyphen baked in literally
+> (`workflow SPATIAL-VDJ { ... }`, `workflow NBISWEDEN_SPATIAL-VDJ { ... }`),
+> which fails to parse (`Error: Unexpected input: '-'`). Fix immediately after
+> `nf-core pipelines create` finishes, before writing PLAN.md: rename every
+> hyphenated workflow identifier to use underscores instead
+> (`SPATIAL-VDJ` → `SPATIAL_VDJ`, `NBISWEDEN_SPATIAL-VDJ` →
+> `NBISWEDEN_SPATIAL_VDJ`) in both `main.nf` and `workflows/<pipeline_name>.nf`.
+> The kebab-case filename (`workflows/spatial-vdj.nf`) is unaffected — only
+> the `workflow NAME { }` identifiers themselves need the underscore.
+
 ```bash
 mkdir -p assets/schemas
 ```
@@ -913,6 +928,14 @@ git add PLAN.md && git commit -m "docs: add development plan"
 
 General Nextflow/Groovy syntax, conventions, and pitfalls — DSL1 migration, the meta map, value vs queue channels, static typing readiness, Groovy falsy values and closure rules, channel operators (`join`/`combine`/`branch`/`mix`), `bin/` scripts — are covered in `Implementation_patterns.md`. Read that first; this phase covers only what's specific to this protocol.
 
+Both templates below (3.2, 3.2b) use the combined `ext key: value, ...`
+directive form. That form is for modules hand-authored without `nf-core
+modules create` (see Phase 5.0 Step 2). When that command generates a
+module, keep its own `task.ext.xxx ?: default` output as-is instead of
+rewriting it to the combined form — both patterns are valid; which one
+applies depends on how the module was created, not one superseding the
+other.
+
 ### 3.2 Process Anatomy — Fully Implemented Local Module
 
 Use this template only when the programmer has supplied all four values required by SO-17.
@@ -921,7 +944,8 @@ Use this template only when the programmer has supplied all four values required
 process TOOLNAME_SUBCOMMAND {
     tag "${meta.id}"
     label 'process_medium'
-    ext prefix: "${meta.id}", args: '', when: true
+    // ext values referencing meta/task/params MUST be a closure — see Implementation_patterns.md's Module Conventions warning.
+    ext prefix: { "${meta.id}" }, args: '', when: true
 
     conda "bioconda::toolname=1.2.3"
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
@@ -976,12 +1000,17 @@ Key rules for stubs:
 - The `script:` block throws an error if accidentally run outside `-stub` mode
 - The `eval()` emits a placeholder version string so the topic channel is populated in stub mode
 - Input arity must match the real tool's requirements
+- `script:` MUST come before `stub:` in the process body — `nextflow lint`
+  reports "Invalid process definition -- check for missing or out-of-order
+  section labels" if `stub:` precedes `script:`
+- Any `ext` value referencing a process input MUST be a closure — see 3.2's
+  note above
 
 ```nextflow
 process TOOLNAME_SUBCOMMAND {
     tag "${meta.id}"
     label 'process_medium'
-    ext prefix: "${meta.id}", args: '', when: true
+    ext prefix: { "${meta.id}" }, args: '', when: true
 
     // TODO [REQUIRED]: Supply conda package spec — see PLAN.md Module Specifications
     //   and Phase 3.5.11 for how to find it.
@@ -1007,19 +1036,19 @@ process TOOLNAME_SUBCOMMAND {
 
     when: task.ext.when
 
-    stub:
-    def prefix = task.ext.prefix
-    """
-    # TODO [REVIEW]: Confirm the touch file extension matches the output declaration above.
-    touch ${prefix}.<ext>
-    """
-
     script:
     // This error fires if the stub is run outside -stub mode.
     // Replace this entire script: block when implementing the module.
     // TODO [REQUIRED]: Implement after supplying conda/container info to the model.
     //   See PLAN.md Programmer Handover for the implementation workflow.
     error "TOOLNAME_SUBCOMMAND: stub only. Implement after providing module info in PLAN.md."
+
+    stub:
+    def prefix = task.ext.prefix
+    """
+    # TODO [REVIEW]: Confirm the touch file extension matches the output declaration above.
+    touch ${prefix}.<ext>
+    """
 }
 ```
 
@@ -1328,7 +1357,7 @@ if ("clean" in params.stages) {
 
 ### 3.5.11 Finding Container and Conda Package Information
 
-**Steps 2–3 are for the programmer to run — not the model.** The model cannot fetch current build hashes or container URIs (SO-17).
+**Steps 2–3 (finding an existing BioContainers image) are for the programmer to run — not the model.** The model cannot fetch current build hashes or construct a plausible-looking container URI from guesswork (SO-17). **Step 4 (Seqera Containers/Wave, for tools not already in BioContainers) the model CAN do directly** — it builds a real, verified container from the proposed conda spec instead of guessing a URI.
 
 **Step 1 — Propose the conda package:**
 
@@ -1363,9 +1392,38 @@ https://depot.galaxyproject.org/singularity/<toolname>:<version>--<build_hash>
 
 The build hash is the same as in the Docker tag.
 
-**Step 4 — For tools not in BioContainers:**
+**Step 4 — For tools not in BioContainers, build one with Seqera Containers (Wave):**
 
-Use Seqera containers: `https://seqera.io/containers/`
+Two-step workflow: precheck the conda spec resolves (fast), then build via the `wave` CLI (slower — do this only once the precheck passes).
+
+*Precheck (pixi, not conda/mamba):*
+
+```bash
+pixi init --import path/to/environment.yml -p linux-64 /tmp/precheck/<name>
+cd /tmp/precheck/<name> && pixi lock --dry-run
+```
+
+Exit `0` → full resolved package list printed, safe to build. Exit `1` → prints the exact resolution failure (wrong channel, missing package, version conflict) without installing anything. Never include the `defaults` channel in `environment.yml`, even if an upstream source's own file lists it — it requires a commercial license for organizational use; strip it and re-run the precheck.
+
+*Build (requires the `wave` CLI installed once per machine from `https://github.com/seqeralabs/wave-cli/releases` — verify the checksum before running an unsandboxed binary):*
+
+```bash
+wave --conda-file path/to/environment.yml --platform linux/amd64 --freeze --await -o json
+```
+
+- `--freeze` is required for a persistent URI (`community.wave.seqera.io/library/<name>:<tag>`) — without it the returned URL expires in ~48 hours.
+- `--platform linux/amd64` even when building from an Apple Silicon dev machine — match what nf-core biocontainers and most HPC clusters actually run.
+- Check the JSON response's `"succeeded"` field, not just the process exit code — `wave` can exit 0 on a failed build.
+- Builds over ~2 minutes exceed a foreground shell timeout — run in the background rather than polling.
+
+*Wire the result into the module:*
+
+```nextflow
+conda "${moduleDir}/environment.yml"
+container "community.wave.seqera.io/library/<name>:<tag>"
+```
+
+A single `container` line (no docker/singularity ternary) is sufficient when `nextflow.config` already sets `apptainer.ociAutoPull = true` / `singularity.ociAutoPull = true` — singularity/apptainer then pull the OCI image directly.
 
 **Step 5 — Supply to the model:**
 
@@ -1386,6 +1444,14 @@ Default: one tool per container/conda environment, one module per tool.
 Bundle more than one tool into a single container only when doing so gives a genuine resource benefit — typically, piping one tool's output directly into another without staging an intermediate file to disk. `bwa` piped into `samtools sort`/`samtools view` is the canonical example: always bundle these rather than writing an unsorted SAM/BAM to disk between two separate processes.
 
 R and Python analysis scripts are the routine exception, not a special case to justify: they depend on multiple libraries rather than a single CLI tool, so their conda spec naturally lists every package the script imports, not one package.
+
+---
+
+### 3.5.11c Output Filenames a Wrapped Tool Doesn't Let You Control
+
+See `Implementation_patterns.md`'s "Scripts in `bin/`" section for the general rule (read the tool before assuming `${prefix}` is achievable; `mv` to the standard name as the last step of `script:` when it isn't).
+
+Every other convention in this protocol (nf-core Harshil alignment, arity, versions topic) assumes outputs are named `${prefix}.<ext>` — keeping that invariant means downstream `join`/`collect` code, nf-test snapshots, and `modules.config` `ext.prefix` overrides all keep working the same way regardless of which specific tool is wrapped.
 
 ---
 
@@ -1452,6 +1518,21 @@ Pipeline tests are conventionally placed directly in `tests/` because it keeps t
 
 `workflow.trace.succeeded()` and `workflow.trace.failed()` work with no special configuration. Tracing only becomes unavailable when the test execution environment lacks `procps` (some minimal containers) or when it is explicitly disabled (`withTrace = false` in `nf-test.config`, or `nf-test test --without-trace`). In those cases, assert output file existence instead of trace counts.
 
+#### `sanitizeOutput()` does not hash gzip-compressed outputs
+
+`sanitizeOutput(process.out)` leaves any `.gz` output as a **raw absolute work-dir path** instead of a stable `filename:md5,<hash>` string, because gzip's own header embeds a timestamp. A snapshot containing raw absolute paths breaks on any other machine or run.
+
+Fix: exclude `.gz` (and similarly compressed, e.g. `.zip`) output keys from the snapshot and assert their existence directly instead — this is also nf-core's own convention (`modules/nf-core/fastqc`'s test does `sanitizeOutput(process.out).findAll { key, val -> key != 'html' && key != 'zip' }`):
+
+```groovy
+{ assert snapshot(sanitizeOutput(process.out).findAll { key, val -> !['fastq_r1', 'fastq_r2', 'summary'].contains(key) }).match() },
+{ assert path(process.out.fastq_r1[0][1]).exists() },
+```
+
+#### `sanitizeOutput()` needs a newer `nft-utils` than the template default
+
+`nf-core/tools`' own pipeline template pins `nft-utils@0.0.3` in `nf-test.config`, which lacks `sanitizeOutput()` (added in `0.0.7`) and fails with a Groovy `MissingMethodException`. This also breaks `nf-core/modules`' own installed module tests (e.g. `fastqc`, `multiqc`), which call `sanitizeOutput()` directly. Bump to `nft-utils@1.0.0` in `nf-test.config` before relying on `sanitizeOutput()` anywhere.
+
 #### Warnings from nf-core template modules
 
 When running nf-test on a project that uses pixi or a local nf-core installation, warnings like the following may appear:
@@ -1476,6 +1557,39 @@ and entering the command `bash .command.run`
 ```
 
 Inspect it the same way as any Nextflow work directory (`.command.sh`, `.command.err`, `.command.out`) — see `Implementation_patterns.md`'s Debugging section. `.nf-test/tests/<test-hash>/meta/nextflow.log` has the full run log for that specific test.
+
+---
+
+### 3.5.13 `meta.yml` Is Required for Local Modules
+
+Every local module needs a `meta.yml` alongside its `main.nf` — the same file `nf-core modules create` generates automatically (see Phase 5.0 Step 2). A local module missing `meta.yml` is a gap to fix, not a valid end state.
+
+Put the module's tool identity, licence, and per-parameter input/output descriptions in `meta.yml` — not as comments in `main.nf`. Keep `main.nf` comments limited to things `meta.yml`'s schema has no natural place for: script-behavior quirks (e.g. why an `mv` renames a wrapped tool's output), directive-level reasoning (e.g. why `stageInMode 'copy'` is set), and pointers to ADRs for anything needing further justification.
+
+---
+
+### 3.5.14 Verifying `publishDir` Won't Silently Collide
+
+The default `publishDir` formula (`${task.process.tokenize(':')[-1].tokenize('_')[0].toLowerCase()}`) only disambiguates by the process's own name — nothing guarantees two *tasks* publishing under that name won't land on the identical path. `nextflow lint` and `-stub` nf-tests cannot catch this: stub mode never runs the real container logic that reveals it, and lint only checks syntax. This has to be checked by reading each module's actual output declaration against how its filename is built in `script:` — not assumed from the `emit:` name.
+
+Two distinct shapes to check for, per module:
+
+1. **A per-sample process whose own script strips the differentiator before emitting.** If `script:` ever renames/moves the final output to something that doesn't include `${prefix}`/`${meta.id}` (e.g. a wrapped tool's own naming convention, or a deliberate `mv` back to a generic name), every sample publishes to the *same* path and later tasks silently overwrite earlier ones under the default `copy` mode. Fix: add a `publishDir` override keyed on `${meta.id}` for that specific process.
+2. **The same process aliased and invoked more than once with a batch-scope (non-per-sample) output.** If a process is included under two aliases (`include { X as X_A }` / `include { X as X_B }`) and called with different parameters but an output whose declared name doesn't vary by whatever differentiates the two calls, both invocations resolve to the same default `publishDir` path. Fix: add a separate `publishDir` override per alias.
+
+Check every module this way before considering a stage complete — not just the ones that seem likely to collide.
+
+---
+
+### 3.5.15 Checking a Wrapped Tool's Own Help/Docs for Assumed Companion Inputs
+
+Once a module's container is built and verified (3.5.11) — not before, since external docs can be stale or version-mismatched relative to what's actually pinned — run `<tool> --help` (or read its bundled docs) inside that actual container before considering the module's `input:` block finished. Look for files the tool expects to find alongside the primary input on disk: index files (`.bai`, `.tbi`, `.fai`, `.pbi`), lookup/reference companions, or anything else it doesn't take as its own explicit flag. Nextflow's staging model only stages what's declared as an explicit process `input:` — colocation on disk doesn't happen by accident the way it does outside a container's staged work directory.
+
+Once found, the companion file only needs to be added to the `input:` of the process that actually consumes it — not to every intermediate process the primary file passes through on its way there. Carry the companion file forward in its own channel from wherever it's produced, running in parallel with the primary file's channel, and `join`/`combine` the two together immediately before the one process that needs both.
+
+Example: PacBio's `isoseq3 refine` needs a `.bam.pbi` index physically alongside its input `.bam`; `pbmerge` and `lima`, upstream, don't need it themselves. The fix isn't to thread `.pbi` through `pbmerge`'s and `lima`'s own `input:`/`output:` blocks — it's to carry it in its own channel from `pbmerge` (which produces both `.bam` and `.bam.pbi`) straight through to a `join` right before `isoseq3 refine`, bypassing the intermediate processes entirely.
+
+Check this for every module wrapping an external tool, once its container is verified — not just ones that fail during testing. A missing companion input can silently produce wrong output instead of erroring, depending on the tool.
 
 ---
 
@@ -1614,7 +1728,23 @@ Commit each install (SO-16). If `jq` is missing and CMD_PREFIX = pixi run: `pixi
 
 #### Step 2 — Create a local module stub (template — triggered inline from Step 5)
 
-Not an upfront pass over every module in PLAN.md. Create one of these the moment Step 5's subworkflow wiring hits a gap no installed module covers: `modules/local/<tool>/main.nf` using Phase 3.2b. Use the file extensions from the Connection Interface Audit in output patterns and `touch` commands — not generic wildcards.
+Not an upfront pass over every module in PLAN.md. Create one of these the moment Step 5's subworkflow wiring hits a gap no installed module covers.
+
+**Use `nf-core modules create`, not a hand-written file.** It generates `main.nf`, `meta.yml`, and `environment.yml` together — a local module missing `meta.yml` is a gap to fix later, not a valid end state (see 3.5.13). Requires the tool/subtool name to be lower-case letters and digits only — any other character (dashes, underscores, etc.) in a multi-word name is stripped entirely rather than rejected, so a tool like `add_10x_bam_tags` becomes the single word `add10xbamtags`; if that reads badly, pick a different name up front rather than fighting the generator after the fact.
+
+```bash
+${CMD_PREFIX} nf-core modules create <toolname> \
+    --author "@<github-handle>" \
+    --label process_single \
+    --meta \
+    --empty-template
+```
+
+- `--empty-template` skips nf-core's own TODO/example scaffolding — the generated `main.nf` uses the separate `task.ext.xxx ?: default` pattern (+ `when: task.ext.when == null || task.ext.when`, `topic: versions`). Keep that pattern as generated — don't rewrite it to the combined `ext key: value, ...` directive form (see the note before Phase 3.2).
+- `--meta`/`--no-meta` and `--label` are required — the command errors out non-interactively without them.
+- This project's own convention keeps nf-test files centralized under `tests/modules/local/<tool>/`, not `modules/local/<tool>/tests/` — delete the generated `tests/` subdirectory; Step 4 below writes the real one in the project's own location.
+- `environment.yml` comes out with a `"YOUR-TOOL-HERE"` placeholder dependency — leave it as a TODO until SO-17 conda/container info is confirmed (Phase 5.1).
+- Edit the generated file extensions/output patterns to match the Connection Interface Audit — not the generator's generic `path("*")` wildcard.
 
 ```bash
 ${CMD_PREFIX} nextflow lint modules/local/<tool>/main.nf
@@ -2027,24 +2157,7 @@ For PATH-A: `nf-core lint` and `nf-core schema build --no-prompts`.
 
 Write all files from Phase 7 and Phase 4. In `conf/modules.config`, add a TODO for each process's `ext.args`.
 
-**`tests/nextflow.config` — mandatory global test configuration:**
-
-```groovy
-// tests/nextflow.config
-// REQUIRED — nf-test exits with an error if this file is absent.
-// Loaded for ALL tests in the tests/ directory.
-// Use this file for common params and resource labels.
-// Per-test-directory nextflow.config files handle process-specific ext.args.
-
-params {
-}
-
-process {
-    withLabel: 'process_single' { cpus = 1; memory = '1.GB'; time = '1.h' }
-    withLabel: 'process_medium' { cpus = 2; memory = '4.GB'; time = '1.h' }
-    withLabel: 'process_high'   { cpus = 4; memory = '8.GB'; time = '1.h' }
-}
-```
+Write `tests/nextflow.config` — mandatory global test configuration. Same content as shown in Phase 3.5.12 (required even if you only fill in `params {}`; nf-test exits without it).
 
 #### Step 8 — Write the end-to-end test
 
@@ -2141,6 +2254,23 @@ If the `-stub` run fails, diagnose and fix all structural issues. Re-run until i
 
 Warnings of the form `"Dependency '...' not found"` referring to nf-core subworkflow files installed in the pixi environment are harmless — see Phase 3.5.12. They do not affect your pipeline's tests.
 
+> [!warning] **A passing full-pipeline `-stub` run does not mean every stage executed**
+> Some installed nf-core modules (e.g. `lima`, `spaceranger/count`) have
+> minimal `stub:` blocks that only touch their non-optional outputs — they
+> never produce a realistically named `.bam` or similar. A downstream
+> subworkflow relying on that output then receives zero events silently,
+> and the pipeline can report `[SUCCESS]` having only exercised its first
+> stage or two. This is a property of those modules' own stubs, not
+> something to fix in your pipeline.
+>
+> Treat a full-pipeline `-stub` pass as validating structural wiring only as
+> far as data actually flowed. Check the run's `[PROCESS ...]` log lines
+> against your full stage list — if later stages never appear, they weren't
+> exercised. To validate downstream subworkflows independently, write a
+> throwaway script (or the nf-test files from Steps 4/5) that calls the
+> subworkflow directly with hand-crafted synthetic channel data, bypassing
+> the upstream module whose stub doesn't propagate anything.
+
 Update PLAN.md Scaffold Status. Commit (SO-16):
 
 ```bash
@@ -2197,6 +2327,14 @@ Replace the stub with the full implementation (Phase 3.2 template):
 - Keep the `stub:` block
 
 Remove resolved TODO markers. Keep any that remain outstanding.
+
+### Step 2.5 — Populate meta.yml
+
+Every local module needs a `meta.yml` (see 3.5.13). Fill in, from what implementing the module just confirmed:
+- `tools[].description`/`homepage`/`documentation`/`licence` — the real tool identity, not a placeholder
+- `input`/`output` — one entry per parameter with a real `description`, not the generated template's empty strings
+
+Move any tool-identity or IO-semantics narrative that had accumulated as `main.nf` comments into the corresponding `meta.yml` field, and trim those comments down to a pointer (`// See meta.yml for tool details and IO descriptions.`) per 3.5.13's comment-scope rule.
 
 ### Step 3 — Lint
 
@@ -2665,8 +2803,22 @@ jobs:
           sudo mv nf-test /usr/local/bin/
 
       - name: Run nf-test
-        run: nf-test test --ci -profile test,docker
+        run: nf-test test --ci --profile docker
 ```
+
+> [!note] **`-profile` (Nextflow, single dash) vs `--profile` (nf-test, double dash) are different flags**
+> `nextflow run main.nf -profile test,docker` runs the pipeline directly
+> against the nf-core `test` profile (`conf/test.config`) — a tiny,
+> biologically meaningless dataset whose only job is to confirm every tool
+> produces *some* output and triggers the next step. `nf-test test --profile
+> docker` runs the nf-test suite instead: each `.nf.test` file supplies its
+> own synthetic inputs directly, so only the container engine needs
+> selecting, not `test`. Neither is a substitute for the other — CI runs
+> both in principle, though this template only automates nf-test. A
+> biologically meaningful run uses the separate `test_full` profile instead
+> (e.g. `nextflow run main.nf -profile test_full,uppmax`, where `uppmax` is
+> the nf-core/configs institutional profile activating SLURM + Apptainer) —
+> too large/slow for CI, so it's launched manually on a cluster.
 
 ---
 
@@ -2728,7 +2880,7 @@ repos:
 | Do not use implicit `it` in closures | All | All parameters must be named. |
 | Do not use `for` loops in workflow scope | All | Use channel operators. |
 | Do not use `when:` for conditional process execution | All | Use `if` blocks or `filter`/`branch`. |
-| Do not use a pipeline name outside `^[a-z]+$` | PATH-A | nf-core enforces this. |
+| Do not use a pipeline name outside `^[a-z]+$` | PATH-A | Enforced/rejected only for org `nf-core` — other orgs just warn (unparseable workflow). See Phase 1's hyphenated-name warning. |
 | Do not manually edit `modules.json` | PATH-A, B | nf-core CLI only. |
 | Do not edit `modules/nf-core/**` without `nf-core modules patch` | PATH-A, B | Unpatched edits silently overwritten. |
 | Do not run `nf-core modules install` | PATH-C | PATH-C uses no nf-core registry modules at all. |
@@ -2777,7 +2929,7 @@ repos:
 | Always use `arity: '0..1'` or `'0..*'` for optional path inputs | `'1'` and `'1..*'` reject `[]`. |
 | Always use lowercase `channel.*` | `Channel.*` is legacy. |
 | Always name all closure parameters; `_`-prefix unused ones | Required for static typing. |
-| Always validate pipeline name against `^[a-z]+$` before the wizard | The wizard rejects non-conforming names. |
+| Always validate pipeline name against `^[a-z]+$` before the wizard | Enforced/rejected only for org `nf-core` — other orgs just warn (unparseable workflow). See Phase 1's hyphenated-name warning. |
 | Always `cd` into the directory created by `nf-core pipelines create` | All paths are relative to that directory. |
 | Always run the two-step module search before writing a local module | Reveals which subcommands exist in the registry. Use `nf-core modules list remote` (PATH-A, PATH-B). |
 | Always run `nf-core modules patch` immediately after editing `modules/nf-core/**` (PATH-A, B) | Unpatched edits are lost on the next update. Same command and mechanism on both paths — modules installed via `nf-core modules install` live in the project's own `modules/nf-core/`, not a separate cache, regardless of PATH-A/B. |
@@ -2796,7 +2948,13 @@ PLAN.md's Scaffold Status is the model's own self-reported progress — not inde
 - [ ] Container URIs actually resolve (`docker pull` / `singularity pull`, or check the registry page) — a plausible-looking tag can still be wrong
 - [ ] `nf-test test tests/**/*.nf.test --profile docker` actually passes — rerun it
 - [ ] `git log`/`git diff` matches the claimed commit-cadence messages — no undisclosed changes bundled into a commit
-- [ ] The versions output file is populated with real tool versions, not leftover stub placeholders (`stub-version-0.0.0`)
+- [ ] The versions output file is populated with real tool versions, not leftover stub placeholders (`stub-version-0.0.0`) — and check *every* module actually reaches it: a subworkflow can declare `ch_versions = channel.empty()` and never `.mix()` in a module that uses the legacy `path "versions.yml"` pattern instead of the `topic: versions` most modules use, silently dropping that tool's version with no error anywhere
+- [ ] Every local module has a real `meta.yml` (tool identity, licence, per-parameter descriptions) — not the generator's placeholder template; see 3.5.13
+- [ ] No process's published output can collide with another task's — see 3.5.14 for how to check this
+- [ ] Every module wrapping an external tool has had its container's `--help`/docs checked for companion/sidecar inputs beyond its primary input — see 3.5.15 for how to wire one in without threading it through upstream processes
+- [ ] Every citation in `CITATIONS.md` (DOI, PMID, PMCID, author list, journal/year/volume/pages) is independently verified against PubMed/Crossref — not just copied from a template, a memory, or model-generated text. A wrong-but-plausible-looking PMID can resolve to a completely unrelated paper without any error
+- [ ] Any "confirmed"/pinned tool version claim (e.g. a container tag asserted to pin a specific tool version) is traced back to the actual upstream build recipe (Dockerfile, module source) — not just trusted from a comment or prior claim
+- [ ] Resource labels (`process_low`/`medium`/`high`/etc.) for any tool with its own published system requirements (check the vendor's docs) are compared against those requirements, not left as unexamined generic template defaults
 - [ ] `grep -rn "secret\|api_key\|password\|token" --include=*.nf --include=*.config .` shows no hardcoded credential values — only `secret '<NAME>'` directives
 - [ ] PATH-R only: every manual-intervention point (0.9.2) is wired as an explicit input, not silently assumed
 

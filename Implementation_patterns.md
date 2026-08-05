@@ -27,6 +27,7 @@ A collection of implementation patterns for Nextflow pipelines following DSL2 St
 > - Two or more queue channel inputs to a process must be synchronized with `join` or `combine`
 > - Never use `System.exit()` — it skips Nextflow's cleanup phase
 > - `ifEmpty` closures emit their return value — always follow with `.filter { item -> item != null }` if log is used in the closure
+> - CLI: single-dash flags (`-profile`, `-resume`) are Nextflow engine options; double-dash flags (`--input`, `--outdir`) are workflow `params.*`
 
 ---
 
@@ -83,6 +84,22 @@ curl -sL https://www.nf-test.com/docs/getting-started/
 ## ⚠️ Common Pitfalls
 
 These are tricky behaviors that catch even experienced Nextflow developers. Each entry describes the problem, shows the broken pattern, and demonstrates the fix.
+
+### CLI Argument Convention: Single Dash vs Double Dash
+
+`⚠️ Bug` — On the `nextflow run` command line, single-dash flags are **engine options** built into Nextflow itself (`-profile`, `-resume`, `-work-dir`, `-with-trace`, ...) and double-dash flags are **workflow parameters** (`params.*`) declared by the pipeline script/schema (`--input`, `--outdir`, ...). Double-dash is reserved for workflow params specifically so that a pipeline can never accidentally shadow an engine option. Using the wrong dash count doesn't reliably error — it can silently fail to set the parameter you meant instead.
+
+```nextflow
+// ✅ Engine options single-dash, workflow params double-dash
+nextflow run main.nf -profile docker -resume --input assets/samplesheet.csv --outdir results
+// 👁️ -profile / -resume are consumed by Nextflow itself — never appear in params
+// 👁️ --input / --outdir map to params.input / params.outdir inside the workflow
+
+// ❌ Single dash on a workflow param — does NOT set params.input
+nextflow run main.nf -input assets/samplesheet.csv
+```
+
+Engine options are the same across every pipeline (`nextflow run --help` lists them); workflow params are pipeline-specific and only exist if that pipeline's script/schema declares them.
 
 ### Queue vs Value Channel Semantics
 
@@ -993,6 +1010,28 @@ workflow {
 }
 ```
 
+### Fail-Fast Validation for Non-Vendored Dependencies
+
+`💡 Convention` — If the pipeline depends on an asset the user must supply locally rather than something the pipeline fetches or vendors itself — a license-restricted script dropped into `bin/`, a reference file, a credential — validate its presence in a custom parameter-validation function (alongside `validateParameters()` above), not implicitly by letting the process that needs it fail deep into a run.
+
+```nextflow
+def validateInputParameters() {
+    if (!workflow.stubRun) {
+        checkRequiredScriptsExist()
+    }
+}
+
+def checkRequiredScriptsExist() {
+    def required = ['some_licensed_script.py']
+    def missing = required.findAll { name -> !file("${projectDir}/bin/${name}").exists() }
+    if (missing) {
+        error "Missing required script(s) in bin/: ${missing.join(', ')} - fetch them before running (see bin/README.md)."
+    }
+}
+```
+
+Guard with `!workflow.stubRun` if `-stub` runs never actually exercise the dependency — otherwise this breaks stub-mode CI/testing where the asset legitimately isn't present. Prefer erroring over a print/warn.
+
 ### Version Capture with Topic Channels
 
 Use `eval()` to capture tool versions at runtime and `topic:` to collect them across all processes into a single channel.
@@ -1094,12 +1133,22 @@ process TOOL_SORT {
 Local (pipeline-specific) modules can use **Mahesh style** (named after Mahesh Binzer-Panchal), which places `output:` after `script:` and `stub:` blocks — grouping execution logic together with structural/metadata declarations at the end. Most readers will be more familiar with output-before-script ordering, so the remaining examples in this document use the conventional order. Mahesh style formatting is available as a VS Code setting in the Nextflow extension.
 This style can also feature `ext` defaults directly in the process directive block (credit to Nicolas Vannieuwkerke). This eliminates the need for `?: ''` fallbacks since default values are guaranteed. The `when: task.ext.when` guard is simpler because `ext when: true` provides the default.
 
+> [!warning] **Closures are mandatory for per-task `ext` values**
+> A bare GString referencing `meta` (`ext prefix: "${meta.id}", args: '', when: true`)
+> fails at runtime with `No such variable: prefix`/`No such variable: when` —
+> `nextflow lint` does not catch this. Wrap any per-task-dynamic `ext` value in
+> a closure instead; static literals (`args: ''`, `when: true`) don't need one:
+> ```nextflow
+> ext prefix: { "${meta.id}" }, args: '', when: true
+> ```
+
 ```nextflow
 process DATA_PROCESS {
     tag "${meta.id}"
     label 'process_high'
     // 👁️ ext defaults set here — no ?: '' fallbacks needed in script block
-    ext prefix: "${meta.id}", args: '', when: true
+    // ⚠️ prefix is a closure `{ "${meta.id}" }` — a bare GString here breaks at runtime (see warning above)
+    ext prefix: { "${meta.id}" }, args: '', when: true
 
     input:
     tuple val(meta), path(input_files, arity: '1..*')
@@ -1135,6 +1184,8 @@ process DATA_PROCESS {
 
 Scripts in `bin/` are automatically added to `$PATH` inside every task. Make them executable with proper shebangs and **call by name** — never by interpreter. If a script is sourced or adapted from another tool, comment the origin so you can find upstream fixes later.
 
+Read the script before assuming its output can be named via `${prefix}` — many wrapped scripts derive their own output name from an input filename or a fixed convention instead of a flag you control. If so, `mv` the result to `${prefix}.<ext>` as the last step of `script:` rather than exposing the wrapped script's own naming in the module's `output:` block.
+
 ```python
 # bin/parse_report.py
 #!/usr/bin/env python
@@ -1167,7 +1218,7 @@ Usage in a process — call the script by name, not by interpreter:
 ```nextflow
 process PARSE_AND_FILTER {
     tag "${meta.id}"
-    ext prefix: "${meta.id}", args: '', when: true
+    ext prefix: { "${meta.id}" }, args: '', when: true
 
     input:
     tuple val(meta), path(report)
@@ -1611,14 +1662,7 @@ output {
     versions { path 'pipeline_info' }
 }
 
-def samplesheet_to_channel(csv) {
-    channel.fromList(samplesheetToList(csv, "${projectDir}/assets/schemas/schema_input.json"))
-        .map { meta, file_1, file_2 ->
-            def files    = file_2 ? [file_1, file_2] : [file_1]
-            def new_meta = meta + [num_files: files.size()]
-            [new_meta, files]
-        }
-}
+def samplesheet_to_channel(csv) { /* see Meta Map Pattern above */ }
 ```
 
 ### Subworkflow with Mixed Modules
@@ -1656,7 +1700,9 @@ When multiple short tools are chained via pipes, bundling them into a single pro
 process ETL_PIPELINE {
     tag "${meta.id}"
     label 'process_high'
-    ext prefix: "${meta.id}", args: '', when: true
+    // ⚠️ prefix MUST be a closure, not a bare GString — see [[#Module Conventions|Module Conventions]]
+    //   "Mahesh Style" section for why `ext prefix: "${meta.id}"` breaks at runtime.
+    ext prefix: { "${meta.id}" }, args: '', when: true
 
     input:
     tuple val(meta), path(input_files, arity: '1..*')
@@ -1739,6 +1785,22 @@ process BATCH_GUNZIP {
 ## ✅ Validation & Testing
 
 nf-test provides three testing scopes: `nextflow_process` for individual modules, `nextflow_workflow` for subworkflows, and `nextflow_pipeline` for end-to-end pipeline tests.
+
+### `nf-test.config`
+
+`💡 Convention` — Configure nf-test's test/work directories and plugins once at the project root. Snapshots (`snap/` subdirectories next to each `.nf.test` file) are the regression baseline and must be committed to git.
+
+```nextflow
+config {
+    testsDir "tests"
+    workDir  ".nf-test"
+
+    plugins {
+        // 👁️ Template default (nft-utils@0.0.3) lacks sanitizeOutput() — pin 1.0.0
+        load "nft-utils@1.0.0"
+    }
+}
+```
 
 ### nf-test for Local Modules
 
@@ -1883,13 +1945,11 @@ nf-test test tests/**/*.nf.test --profile docker
 
 ```nextflow
 process {
-    resourceLimits = [cpus: 24, memory: 128.GB, time: 72.h]   // 👁️ Cluster maximum
-
-    withLabel: process_low    { cpus = 2;  memory = 4.GB;  time = 2.h  }
-    withLabel: process_medium { cpus = 6;  memory = 16.GB; time = 8.h  }
-    withLabel: process_high   { cpus = 12; memory = 64.GB; time = 24.h }
+    resourceLimits = [cpus: 24, memory: 128.GB, time: 72.h]   // 👁️ Caps any label that exceeds it
 }
 ```
+
+See `conf/base.config` in Configuration Patterns below for the full label-to-resource mapping.
 
 ### Dynamic Retry with Resource Escalation
 
@@ -2321,8 +2381,10 @@ ch_ref = channel.fromPath(params.reference, checkIfExists: true).collect()
 ```nextflow
 // ✅ ext defaults in directives — no ?: '' needed in script
 // ✅ directives, inputs, when, script, output
+// ⚠️ prefix MUST be a closure `{ "${meta.id}" }`, not a bare GString —
+//   see [[#Module Conventions|Module Conventions]] "Mahesh style" for why.
 process TASK {
-    ext prefix: "${meta.id}", args: '', when: true
+    ext prefix: { "${meta.id}" }, args: '', when: true
 
     input:
     tuple val(meta), path (thing)
