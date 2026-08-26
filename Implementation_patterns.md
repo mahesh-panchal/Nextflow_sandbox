@@ -15,6 +15,7 @@ A collection of implementation patterns for Nextflow pipelines following DSL2 St
 > - Always use `def` for local variables in closures and script blocks
 > - `$` is Nextflow interpolation in `"""` blocks; bash variables need `\$`
 > - `path` inputs can be a single file or a list — use arity to enforce
+> - `arity: '0..1'` is illegal on inputs and outputs; only `arity: '1'` gives a bare `Path`, every range gives a `List<Path>`
 > - Groovy falsy values: `0`, `""`, `[]`, and `null` are all falsy — check with `!= null` if `0` is valid
 > - `channel.of()` spreads arguments; `channel.fromList()` takes a single list
 > - `collect()` gathers items into a list; `collectFile()` writes items to a file
@@ -28,6 +29,10 @@ A collection of implementation patterns for Nextflow pipelines following DSL2 St
 > - Never use `System.exit()` — it skips Nextflow's cleanup phase
 > - `ifEmpty` closures emit their return value — always follow with `.filter { item -> item != null }` if log is used in the closure
 > - CLI: single-dash flags (`-profile`, `-resume`) are Nextflow engine options; double-dash flags (`--input`, `--outdir`) are workflow `params.*`
+
+---
+
+**Markers:** `⚠️` = causes bugs/failures · `💡` = convention/best practice · `🎨` = style preference · `👁️` = inline annotation on the code line it sits beside.
 
 ---
 
@@ -45,31 +50,27 @@ A collection of implementation patterns for Nextflow pipelines following DSL2 St
 - [[#Helper Functions|Helper Functions]]
 - [[#Architectural Patterns|Architectural Patterns]]
 - [[#Validation & Testing|Validation & Testing]]
-- [[#Resource Management|Resource Management]]
 - [[#Publication Patterns|Publication Patterns]]
 - [[#Configuration Patterns|Configuration Patterns]]
 - [[#Debugging|Debugging]]
 - [[#Best Practices Checklist|Best Practices Checklist]]
-- [[#Quick Migration Examples|Quick Migration Examples]]
-- [[#Additional Resources|Additional Resources]]
 
 ---
 
 ## 📚 Documentation Quick Reference
 
-These commands fetch the latest Nextflow and plugin documentation directly from the official sources. Useful for verifying operator signatures, config options, or process directives.
+Fetch the current Nextflow and plugin documentation to verify operator signatures, config options, or process directives.
 
 ### Fetch Latest Nextflow Docs via CLI
 
 ```bash
 curl -sL https://docs.seqera.io/nextflow/reference/operator
 curl -sL https://docs.seqera.io/nextflow/reference/channel
+curl -sL https://docs.seqera.io/nextflow/reference/channel#topic
 curl -sL https://docs.seqera.io/nextflow/reference/config
 curl -sL https://docs.seqera.io/nextflow/reference/process
-curl -sL https://docs.seqera.io/nextflow/reference/workflow
-curl -sL https://docs.seqera.io/nextflow/reference/process#resourcelimits
-curl -sL https://docs.seqera.io/nextflow/reference/process#eval
-curl -sL https://docs.seqera.io/nextflow/reference/channel#topic
+curl -sL https://docs.seqera.io/nextflow/reference/process/directives      # resourceLimits, maxForks, ...
+curl -sL https://docs.seqera.io/nextflow/reference/process/inputs-outputs  # arity, eval, optional, ...
 ```
 
 ### Plugins
@@ -79,15 +80,25 @@ curl -sL https://nextflow-io.github.io/nf-schema/
 curl -sL https://www.nf-test.com/docs/getting-started/
 ```
 
+### Community Resources
+
+| Resource | URL |
+|---|---|
+| Nextflow docs | https://docs.seqera.io/nextflow/ |
+| nf-core guidelines | https://nf-co.re/docs/guidelines |
+| nf-test docs | https://www.nf-test.com/ |
+| Nextflow patterns | https://nextflow-io.github.io/patterns/ |
+| Seqera community | https://community.seqera.io/ |
+
 ---
 
 ## ⚠️ Common Pitfalls
 
-These are tricky behaviors that catch even experienced Nextflow developers. Each entry describes the problem, shows the broken pattern, and demonstrates the fix.
+Tricky behaviours that catch even experienced Nextflow developers.
 
 ### CLI Argument Convention: Single Dash vs Double Dash
 
-`⚠️ Bug` — On the `nextflow run` command line, single-dash flags are **engine options** built into Nextflow itself (`-profile`, `-resume`, `-work-dir`, `-with-trace`, ...) and double-dash flags are **workflow parameters** (`params.*`) declared by the pipeline script/schema (`--input`, `--outdir`, ...). Double-dash is reserved for workflow params specifically so that a pipeline can never accidentally shadow an engine option. Using the wrong dash count doesn't reliably error — it can silently fail to set the parameter you meant instead.
+`⚠️ Bug` — On the `nextflow run` command line, single-dash flags are **engine options** built into Nextflow itself (`-profile`, `-resume`, `-work-dir`, `-with-trace`, ...) and double-dash flags are **workflow parameters** (`params.*`) declared by the pipeline script/schema (`--input`, `--outdir`, ...). Using the wrong dash count doesn't reliably error — it can silently fail to set the parameter you meant instead.
 
 ```nextflow
 // ✅ Engine options single-dash, workflow params double-dash
@@ -103,7 +114,7 @@ Engine options are the same across every pipeline (`nextflow run --help` lists t
 
 ### Queue vs Value Channel Semantics
 
-`💡 Convention` — Queue channels are implicitly forked in DSL2, and consume values to make inputs. **value channels** can be reused for every downstream consumer.
+`💡 Convention` — Queue channels are implicitly forked in DSL2 and consume values to make inputs; **value channels** can be reused by every downstream consumer.
 The `channel.value(file(...))` pattern is a `🎨 Preference` for single reference files. For globbing multiple files (e.g., `channel.fromPath('data/*.fastq.gz')`),
 `fromPath` is the preferred approach.
 
@@ -115,7 +126,7 @@ PROCESS_A(ch_input, ch_reference)
 PROCESS_B(ch_output, ch_reference)
 ```
 
-Also note the distinction between `of()` and `fromList()`:
+`of()` and `fromList()` differ:
 
 ```nextflow
 // 👁️ of() spreads each argument as a separate emission
@@ -132,7 +143,7 @@ channel.fromList(items)  // emits: 'A', 'B', 'C'    ← three emissions
 
 ### Closure Braces for Dynamic Directives
 
-`⚠️ Bug` — Without braces, the expression is evaluated **once** at process definition time — not re-evaluated on retry. This means resource escalation silently fails.
+`⚠️ Bug` — Without braces, the expression is evaluated **once** at process definition time — not re-evaluated on retry, so resource escalation silently fails.
 
 ```nextflow
 // 👁️ Braces make this a closure — re-evaluated on each retry attempt
@@ -164,7 +175,7 @@ echo "\${PWD}"              // 👁️ \$ escapes Nextflow — bash resolves PWD
 
 ### Always Use `def` for Local Variables
 
-`⚠️ Bug` — Without `def`, variables leak into global scope causing **race conditions** between concurrent tasks. This creates intermittent, hard-to-reproduce bugs.
+`⚠️ Bug` — Without `def`, variables leak into global scope, causing **race conditions** between concurrent tasks and intermittent, hard-to-reproduce bugs.
 
 ```nextflow
 // ✅
@@ -182,7 +193,7 @@ echo "\${PWD}"              // 👁️ \$ escapes Nextflow — bash resolves PWD
 
 ### Groovy Truthy Edge Cases
 
-`⚠️ Bug` — Groovy's truthiness rules differ from most languages. `0`, `0.0`, `""`, `[]`, and `null` are **all falsy**. This means a valid value of `0` is silently treated as "missing."
+`⚠️ Bug` — Groovy's truthiness rules differ from most languages: `0`, `0.0`, `""`, `[]`, and `null` are **all falsy**, so a valid value of `0` is silently treated as "missing".
 
 ```nextflow
 // ✅ Safe when value could be 0
@@ -194,28 +205,44 @@ def threshold = meta.threshold ? "--cutoff ${meta.threshold}" : ""
 
 ### Input Cardinality and Arity
 
-`💡 Convention` — The `arity` qualifier enforces how many files a `path` input accepts. Without it, `path` can be a single `Path` or a `List<Path>` depending on what the channel emits, leading to subtle type errors.
+`💡 Convention` — `arity` enforces how many files a `path` accepts and fixes the **type** of the variable. Without it, `path` is a single `Path` or a `List<Path>` depending on what the channel emits. The value is always a **string**, never an integer, and the range form is `'min..max'` with `*` meaning unlimited.
 
-The arity value is always a **string** (not an integer). It controls the type of the variable in the process:
+**Only `arity: '1'` yields a bare `Path`. Every range form yields a `List<Path>`, even when exactly one file matches.**
+
+| Declaration | Type in process | Meaning |
+|---|---|---|
+| `arity: '1'` | `Path` | exactly one file |
+| `arity: '2'` | `List<Path>` (size 2) | exactly two files |
+| `arity: '1..*'` | `List<Path>` | one or more; size-1 list for a single file |
+| `arity: '0..*'` | `List<Path>` | zero or more; empty list when nothing matches |
 
 ```nextflow
 input:
-// 👁️ arity: '1' → variable is a single Path object
-tuple val(meta), path(files, arity: '1')
-
-// 👁️ arity: '2' → exactly 2 files; variable is a List<Path> of size 2
-tuple val(meta), path(files, arity: '2')
-
-// 👁️ arity: '1..*' → one or more files; variable is always a List<Path>
-//    (even if only one file is provided)
-path('many_*.txt', arity: '1..*')
-
-// 👁️ arity: '0..*' → zero or more files; variable is always a List<Path>
-//    (empty list when no files match)
-path('optional_*.txt', arity: '0..*')
+tuple val(meta), path(files, arity: '1')      // 👁️ bare Path — the ONLY non-list form
+tuple val(meta), path(files, arity: '2')      // 👁️ List<Path> of size 2
+path('many_*.txt', arity: '1..*')             // 👁️ List<Path>, even with one file
+path('optional_*.txt', arity: '0..*')         // 👁️ optional path input — empty list if none
 ```
 
-The range syntax follows the pattern `'min..max'` where `*` means unlimited.
+`⚠️ Bug` — **`arity: '0..1'` is not a legal arity.** Nextflow rejects it on inputs **and** outputs with `Path arity 0..1 is not allowed`. Never write it, however natural "zero or one file" reads.
+
+```nextflow
+// ❌ Rejected on inputs AND outputs
+path(maybe_file, arity: '0..1')
+
+// ✅ Optional path INPUT → always a List<Path> (empty when absent)
+input:
+path(maybe_file, arity: '0..*')
+
+// ❌ arity + optional — the arity check still runs and rejects zero files:
+//    "Incorrect number of output files ... expected 1, found 0"
+tuple val(meta), path("*.report.txt", arity: '1'), optional: true, emit: report
+
+// ✅ Optional single-file OUTPUT → omit arity entirely.
+//    Bare Path when the file exists; nothing emitted when it doesn't.
+output:
+tuple val(meta), path("*.report.txt"), optional: true, emit: report
+```
 
 ### Getting File Base Names (Stripping Extensions)
 
@@ -246,9 +273,6 @@ process API_LOOKUP {
     val(result),                              emit: data
     path("${entity_id}_lookup.json"),         emit: json_file
 
-    when:
-    task.ext.when == null || task.ext.when
-
     exec:
     // 👁️ exec: runs Groovy code in the JVM — no container, no bash
     def response  = new URL("https://api.example.com/v2/entities?id=${entity_id}").text
@@ -276,12 +300,11 @@ ch_version_txt = ch_versions.collectFile(name: 'versions.txt', newLine: true)
 ```
 
 > [!tip] Use a native process instead of `collectFile`
-> Native processes (exec:) can be used in place of `collectFile` and are more flexible. 
-> For example meta maps can be propagated with the file.
+> Native processes (`exec:`) can replace `collectFile` and are more flexible — meta maps can be propagated with the file.
 
 ### `collect()` vs `toList()`
 
-`💡 Convention` - These both produce list outputs. The difference in output is when data has nested list, or the channel is empty.
+`💡 Convention` — These both produce list outputs. The difference in output is when data has nested list, or the channel is empty.
 
 ```nextflow
 ch_empty = channel.empty()
@@ -310,32 +333,19 @@ result = MULTI_INPUT_PROCESS(ch_records, ch_split.data, ch_split.index, ch_split
 
 ### `-resume` and Cache Invalidation
 
-`💡 Convention` — Understanding what does and doesn't invalidate the Nextflow cache prevents wasted computation and mysterious re-runs.
-
 **Invalidates cache:** Changing `script:` content, `container`, `conda`, input files/values
 
 **Does NOT invalidate cache:** Changing `publishDir`, output definitions, `tag`, `label`
 
 `storeDir` bypasses normal caching — skips the task entirely if the output already exists.
 
-Never use `beforeScript`/`afterScript` — they run outside the container context and can cause irreproducible behavior.
-
-### Config Selector Precedence
-
-`💡 Convention` — When both `withName` and `withLabel` set the same directive, `withName` wins. This is important when you need to override a label-level default for a specific process.
-
-```nextflow
-process {
-    withLabel: process_high { ext.args = '--fast' }
-    withName: MY_PROCESS    { ext.args = '--sensitive' }   // 👁️ This wins
-}
-```
+Never use `beforeScript`/`afterScript` — they run outside the container context and can cause irreproducible behaviour.
 
 ### Subworkflow vs Process Input Type Handling
 
-`💡 Convention` — Objects passed to **subworkflows** pass through as-is with no type conversion. This is important because it preserves types: param submaps, plain lists, and non-channel objects arrive in the subworkflow exactly as sent.
+`💡 Convention` — Objects passed to **subworkflows** pass through as-is with no type conversion. Param submaps, plain lists, and non-channel objects arrive in the subworkflow exactly as sent.
 
-Objects passed to **processes**, however, are **implicitly converted to value channel inputs** if they aren't already channels. This means a bare file path or a map passed directly to a process becomes a value channel automatically.
+Objects passed to **processes** are **implicitly converted to value channel inputs** if they aren't already channels — a bare file path or a map passed directly to a process becomes a value channel automatically.
 
 ```nextflow
 // 👁️ Subworkflow: objects pass through unchanged — types preserved
@@ -345,7 +355,6 @@ MY_SUBWORKFLOW(ch_reads, params.options)  // params.options arrives as a Map, no
 MY_PROCESS(ch_reads, file(params.reference, checkIfExists: true))    // params.reference becomes channel.value(file(params.reference, checkIfExists: true))
 ```
 
-This distinction matters when passing param submaps through subworkflows to processes — the subworkflow sees the raw object, while the process receives it as a value channel.
 
 ---
 
@@ -432,7 +441,7 @@ ch_results
 
 ### Mistake: Creating Channels Inside Processes or Operator Closures
 
-`⚠️ Bug` — Channel factories (`channel.of()`, `channel.fromPath()`) must be called in **workflow blocks** only. Inside process definitions they are ignored. Inside operator closures (`.map`, `.filter`, `.flatMap`, `.branch`) they produce undefined behavior — closures run synchronously but channels are asynchronous.
+`⚠️ Bug` — Channel factories (`channel.of()`, `channel.fromPath()`) must be called in **workflow blocks** only. Inside process definitions they are ignored. Inside operator closures (`.map`, `.filter`, `.flatMap`, `.branch`) they produce undefined behaviour — closures run synchronously but channels are asynchronous.
 
 ```nextflow
 // ❌ Cannot create channels inside a process
@@ -533,7 +542,7 @@ validateParameters()
 
 ### Mistake: Using `when:` for Conditional Process Execution
 
-`💡 Convention` — The `when:` directive seems natural for conditionally skipping a process, but is unofficially deprecated. 
+`💡 Convention` — The `when:` directive is unofficially deprecated.
 `when: task.ext.when == null || task.ext.when` is however still used across nf-core compatible modules, to cater for an edge-case.
 
 Use workflow-level `if` blocks or channel operators (`filter`, `branch`) instead.
@@ -693,7 +702,7 @@ MY_WORKFLOW.out.foo.view()
 
 ### Use `combine` (Avoid `each` Input Qualifier)
 
-`💡 Convention` — The `each` input qualifier is deprecated. Use `combine` in the workflow block to create all pairings, then pass a single tuple to the process.
+`💡 Convention` — `each` still works in untyped processes, but is **unavailable in typed processes** and unsupported under static typing. Use `combine` in the workflow block to create all pairings, then pass a single tuple to the process.
 
 ```nextflow
 process ANALYZE {
@@ -728,7 +737,7 @@ channel.fromPath('samplesheet.csv').splitCsv(sep: ',')
 
 ### Avoid All Deprecated Patterns
 
-This example shows three deprecated patterns in one line: `Channel.from` (use `channel.of`), uppercase `Channel` (use lowercase `channel`), and implicit `it` (name the parameter).
+Three deprecated patterns in one line: `Channel.from` (use `channel.of`), uppercase `Channel` (use lowercase `channel`), and implicit `it` (name the parameter).
 
 ```nextflow
 // ❌ Three deprecated patterns
@@ -764,11 +773,11 @@ ch.map { meta, bambai -> [meta] + bambai }
 
 ### No `switch` statements
 
-`switch` statements and `switch` expressions are deprecated in Nextflow. Use an `if-else` chain in place of `switch` statements
+`switch` statements and `switch` expressions are **removed** under strict syntax — they do not parse. Use an `if-else` chain in place of `switch` statements
 and map-based choice for `switch` expressions.
 
 ```nextflow
-// ❌ switch not allowed in strict syntax
+// ❌ switch does not parse under strict syntax
 switch (aligner) {
     case 'bowtie2': // ...
     case 'bwamem':  // ...
@@ -797,7 +806,7 @@ input: env 'FOO'
 
 ## 🔗 Joins and Data Merging
 
-Common patterns for combining data from multiple channels. These are essential when different processes produce outputs that need to be matched back together by sample key.
+Patterns for combining data from multiple channels, matching outputs from different processes back together by sample key.
 
 ### Left Join (Inclusive Join)
 
@@ -865,7 +874,7 @@ ch_combinations = channel.of('S1', 'S2').combine(channel.of('RefA', 'RefB'))
 
 ### Inner Join
 
-Only items with matching keys in both channels are emitted. This is the default behavior of `join`.
+Only items with matching keys in both channels are emitted. This is the default behaviour of `join`.
 
 ```nextflow
 ch_matched = ch_input.join(ch_metadata)
@@ -881,7 +890,7 @@ Patterns for handling missing files, optional inputs, and transient failures.
 
 When you need to prefer one channel over another — for example, using a user-provided list if available, or falling back to a default — use `collect()`, `concat()`, `first()`, and `flatten()`.
 
-The key insight: **`collect()` on an empty channel emits nothing** (not an empty list). This means `concat()` skips past it to the next channel, and `first()` picks whichever channel actually emits.
+**`collect()` on an empty channel emits nothing** (not an empty list), so `concat()` skips past it to the next channel and `first()` picks whichever channel actually emits.
 
 ```nextflow
 // 👁️ collect() on empty channel = no emission → concat skips to next channel
@@ -913,23 +922,18 @@ ch_filter_entries = ch_custom_entries
 Pass `[]` (empty list) for optional `path` inputs and `''` for optional `val` inputs. The process script checks for emptiness and omits the corresponding flag.
 
 ```nextflow
-// nf-core style: ?: '' fallbacks, defensive when: guard
 process PROCESS_DATA {
     input:
     tuple val(meta), path(input_files)
     path(index)
     val(extra_args)
 
-    when:
-    task.ext.when == null || task.ext.when
-
     script:
-    def args      = task.ext.args   ?: ''
     def prefix    = task.ext.prefix ?: "${meta.id}"
     def index_cmd = index      ? "--index ${index}" : ""     // 👁️ Empty [] is falsy → skips flag
-    def extra     = extra_args ? "${extra_args}"     : ""     // 👁️ Empty '' is falsy → skips flag
+    def extra     = extra_args ? "${extra_args}"    : ""     // 👁️ Empty '' is falsy → skips flag
     """
-    tool process ${index_cmd} ${extra} ${args} ${input_files} > ${prefix}.out
+    tool process ${index_cmd} ${extra} ${input_files} > ${prefix}.out
     """
 }
 
@@ -942,15 +946,22 @@ workflow {
 }
 ```
 
-### Error Handling with Retry
+### Error Handling with Retry and Resource Escalation
 
-Retry tasks that fail with common out-of-memory or timeout exit codes. After 3 retries, let the task fail gracefully (don't abort the whole pipeline).
+Retry tasks that fail with common out-of-memory or timeout exit codes, multiplying resources by `task.attempt` so each attempt gets more. After 3 retries, let the task fail gracefully (don't abort the whole pipeline).
 
 ```nextflow
 process HEAVY_TASK {
+    label 'process_high'
+
+    // 👁️ Closure braces = re-evaluated per attempt; without them escalation silently fails
+    cpus   { 8     * task.attempt }
+    memory { 16.GB * task.attempt }
+    time   { 4.h   * task.attempt }
+
     errorStrategy {
-        task.exitStatus in [104, 110, 137, 139, 143] && task.attempt <= 3
-            ? 'retry'      // 👁️ OOM/timeout → retry with escalated resources
+        task.exitStatus in ((130..145) + 104) && task.attempt <= 3
+            ? 'retry'      // 👁️ OOM/timeout → retry with the escalated resources above
             : 'finish'     // 👁️ Other errors or max retries → let pipeline finish other tasks
     }
     maxRetries 3
@@ -961,6 +972,8 @@ process HEAVY_TASK {
     """
 }
 ```
+
+`resourceLimits` in `conf/base.config` caps the escalation so no retry can request more than the cluster allows.
 
 ---
 
@@ -980,19 +993,18 @@ ch_database  = channel.value(file(params.database, checkIfExists: true))
 
 ### Meta Map Pattern
 
-Parse a samplesheet into a channel of `[meta, files]` tuples using nf-schema. `samplesheetToList()` reads the CSV and validates it against the JSON schema, returning a list of tuples where each tuple element corresponds to a column defined in the schema.
+`samplesheetToList()` reads the CSV, validates it against the JSON schema, and returns a list of tuples — one element per schema column.
 
 ```nextflow
 include { samplesheetToList } from 'plugin/nf-schema'
 
 def samplesheet_to_channel(csv) {
     // 👁️ samplesheetToList returns a list of tuples: [[meta_map, file1, file2], ...]
-    //    Each tuple's structure is defined by the JSON schema
     channel.fromList(samplesheetToList(csv, "${projectDir}/assets/schemas/schema_input.json"))
-        .map { meta, file_1, file_2 ->
-            def files    = file_2 ? [file_1, file_2] : [file_1]
-            def new_meta = meta + [num_files: files.size()]
-            [new_meta, files]
+        .map { meta, fastq_1, fastq_2 ->
+            def reads    = fastq_2 ? [fastq_1, fastq_2] : fastq_1
+            def new_meta = meta + [single_end: !fastq_2]   // 👁️ meta flag the modules branch on
+            [new_meta, reads]
         }
 }
 ```
@@ -1012,7 +1024,7 @@ workflow {
 
 ### Fail-Fast Validation for Non-Vendored Dependencies
 
-`💡 Convention` — If the pipeline depends on an asset the user must supply locally rather than something the pipeline fetches or vendors itself — a license-restricted script dropped into `bin/`, a reference file, a credential — validate its presence in a custom parameter-validation function (alongside `validateParameters()` above), not implicitly by letting the process that needs it fail deep into a run.
+`💡 Convention` — If the pipeline depends on an asset the user must supply locally rather than something the pipeline fetches or vendors itself — a licence-restricted script dropped into `bin/`, a reference file, a credential — validate its presence in a custom parameter-validation function (alongside `validateParameters()`), not implicitly by letting the process that needs it fail deep into a run.
 
 ```nextflow
 def validateInputParameters() {
@@ -1044,18 +1056,14 @@ process DATA_QC {
     tuple val(meta), path(input_files)
 
     output:
-    tuple val(meta), path("*.html"),                                                                    emit: html
-    tuple val(meta), path("*.zip"),                                                                     emit: zip
+    tuple val(meta), path("*.html"),                                                      emit: html
+    tuple val(meta), path("*.zip"),                                                       emit: zip
     // 👁️ eval() runs a shell command; topic: sends the result to a named topic channel
     tuple val("${task.process}"), val('qctool'), eval('qctool --version 2>&1 | head -1'), emit: versions_qctool, topic: versions
 
-    when:
-    task.ext.when == null || task.ext.when
-
     script:
-    def args = task.ext.args ?: ''
     """
-    qctool ${args} --threads ${task.cpus} ${input_files}
+    qctool --threads ${task.cpus} ${input_files}
     """
 }
 
@@ -1075,10 +1083,10 @@ workflow {
 
 ### Module Styles
 
-There are two common conventions for structuring Nextflow process modules. Both are valid; the choice depends on whether you're writing a reusable community module or a pipeline-specific local module.
+Two conventions exist for structuring process modules. Both are valid; choose by whether the module is a reusable community module or a pipeline-specific local module.
 
 > [!note] **Harshil Alignment** `🎨 Preference`
-> The nf-core community uses a distinctive output formatting style (named after Harshil Patel) where `emit:` and `topic:` labels are right-aligned across output declarations. This improves readability when scanning long output blocks. Harshil alignment is an **nf-core community convention** — it is not a Nextflow language requirement or a general best practice for all pipelines.
+> The nf-core community uses a distinctive output formatting style (named after Harshil Patel) where `emit:` and `topic:` labels are right-aligned across output declarations. Harshil alignment is an **nf-core community convention** — it is not a Nextflow language requirement or a general best practice for all pipelines.
 >
 > ```nextflow
 > output:
@@ -1130,7 +1138,7 @@ process TOOL_SORT {
 
 ### Mahesh Style: Local Module Structure `🎨 Preference`
 
-Local (pipeline-specific) modules can use **Mahesh style** (named after Mahesh Binzer-Panchal), which places `output:` after `script:` and `stub:` blocks — grouping execution logic together with structural/metadata declarations at the end. Most readers will be more familiar with output-before-script ordering, so the remaining examples in this document use the conventional order. Mahesh style formatting is available as a VS Code setting in the Nextflow extension.
+Local (pipeline-specific) modules can use **Mahesh style** (named after Mahesh Binzer-Panchal), which places `output:` after `script:` and `stub:` blocks — grouping execution logic together with structural/metadata declarations at the end. Mahesh style formatting is available as a VS Code setting in the Nextflow extension.
 This style can also feature `ext` defaults directly in the process directive block (credit to Nicolas Vannieuwkerke). This eliminates the need for `?: ''` fallbacks since default values are guaranteed. The `when: task.ext.when` guard is simpler because `ext when: true` provides the default.
 
 > [!warning] **Closures are mandatory for per-task `ext` values**
@@ -1237,7 +1245,7 @@ process PARSE_AND_FILTER {
 
 ### Bash Variable Escaping
 
-Inside `"""` script blocks, `$` is Nextflow interpolation by default. Bash variables must be escaped with `\$`. This is a common sources of bugs.
+Inside `"""` script blocks, `$` is Nextflow interpolation by default. Bash variables must be escaped with `\$`.
 
 ```nextflow
 process EXAMPLE {
@@ -1267,8 +1275,8 @@ process EXAMPLE {
 ### Logging Best Practices
 
 Log to **stderr** (`>&2`) inside tasks so diagnostic messages don't contaminate stdout (which may be piped to the next tool).
-Use `tee` to ensure output captured as logs are still emitted to their respective streams. This prevents loss of diagnostic
-information on process errors when scratch allocations are given up.
+Use `tee` so output captured as logs is still emitted to the respective streams, preventing loss of diagnostic
+information when a process fails and its scratch allocation is given up.
 
 ```nextflow
 process ANALYZE {
@@ -1319,7 +1327,9 @@ process FETCH_DB {
 }
 
 workflow {
-    fetch_out = FETCH_DB()
+    // 👁️ FETCH_DB declares `input: path manifest` — the call must supply it
+    ch_manifest = channel.value(file(params.db_manifest, checkIfExists: true))
+    fetch_out   = FETCH_DB(ch_manifest)
     QUERY_DB(ch_data, fetch_out.db)
 }
 ```
@@ -1332,7 +1342,7 @@ Useful Groovy idioms for building command strings, config files, and conditional
 
 ### Map-based Choice (Replaces Nested Ternary)
 
-When a value maps to a flag string, use a Groovy `Map` instead of nested ternary operators. This is more readable and easier to extend.
+When a value maps to a flag string, use a Groovy `Map` instead of nested ternary operators.
 
 ```nextflow
 def mode_presets = [
@@ -1359,7 +1369,7 @@ def extension = format_map
 
 Build complex argument strings by collecting items into a list, removing empties, and joining. This avoids deeply nested ternaries in config closures.
 
-Config closures (inside `ext.args = { ... }`) can reference `meta`, `task`, `params`, **and process input variable names** (like `input_file` below) because they are evaluated in the task context where all inputs are in scope.
+Config closures (inside `ext.args = { ... }`) can reference `meta`, `task`, `params`, **and process input variable names** (like `input_file`) because they are evaluated in the task context where all inputs are in scope.
 
 ```nextflow
 process {
@@ -1380,7 +1390,7 @@ process {
 
 ### Transpose for Parallel Pairing
 
-Use Groovy's `transpose()` to zip multiple lists together and generate config lines. Useful when building tool configuration files from parallel arrays. These snippets are excerpts from inside a `script:` block where the variables are defined earlier.
+Use Groovy's `transpose()` to zip multiple lists together and generate config lines. Useful when building tool configuration files from parallel arrays. The snippets are excerpts from a `script:` block; the variables are defined earlier in that block.
 
 ```nextflow
 script:
@@ -1399,7 +1409,7 @@ run_tool --config tool.conf
 
 ### Config Construction with Builders and Heredocs
 
-For complex config formats (YAML, JSON), use Groovy's builder classes to serialize maps correctly, then inject into a heredoc. The `parameters` variable below is a process input. The heredoc also allows bash variables to be interpolated such as `\$PWD`.
+For complex config formats (YAML, JSON), use Groovy's builder classes to serialise maps correctly, then inject into a heredoc. The `parameters` variable is a process input. The heredoc also allows bash variables to be interpolated such as `\$PWD`.
 
 ```nextflow
     script:
@@ -1416,7 +1426,7 @@ For complex config formats (YAML, JSON), use Groovy's builder classes to seriali
 
 ### Custom Config from a Map
 
-For simple key-value config files, iterate over a map and format each entry. The `prefix`, `args`, and `input_file` variables below come from the enclosing `script:` block.
+For simple key-value config files, iterate over a map and format each entry. The `prefix`, `args`, and `input_file` variables come from the enclosing `script:` block.
 
 ```nextflow
     script:
@@ -1570,7 +1580,7 @@ ch_all_pairs = combineByMetaKeys(ch_data, ch_configs, keySet: ['id'], meta: 'mer
 
 ## 🗂️ Architectural Patterns
 
-Patterns for organizing pipeline code into modules, subworkflows, and a root workflow.
+Patterns for organising pipeline code into modules, subworkflows, and a root workflow.
 
 ### Project Structure
 
@@ -1579,16 +1589,20 @@ Patterns for organizing pipeline code into modules, subworkflows, and a root wor
 ├── main.nf
 ├── nextflow.config
 ├── nextflow_schema.json
+├── nf-test.config
 ├── modules/
 │   ├── local/
-│   │   └── data_process.nf
+│   │   └── data_process/
+│   │       ├── main.nf
+│   │       ├── meta.yml           # required for every local module
+│   │       └── environment.yml
 │   └── nf-core/
-│       ├── tool_qc/main.nf
-│       └── tool_sort/main.nf
+│       ├── tool/qc/main.nf
+│       └── tool/sort/main.nf
 ├── subworkflows/
 │   ├── local/
-│   │   ├── preprocessing.nf
-│   │   └── analysis.nf
+│   │   ├── preprocessing/main.nf
+│   │   └── analysis/main.nf
 │   └── nf-core/
 │       └── utils_nfcore_pipeline/main.nf
 ├── assets/schemas/schema_input.json
@@ -1597,25 +1611,28 @@ Patterns for organizing pipeline code into modules, subworkflows, and a root wor
 │   └── filter_results.sh
 ├── conf/
 │   ├── base.config
-│   └── modules.config
+│   ├── modules.config
+│   └── test.config
 └── tests/
-    ├── main.nf.test
-    ├── modules/
-    │   └── clean_and_process.nf.test
-    └── subworkflows/
-        └── preprocessing.nf.test
+    ├── nextflow.config            # mandatory once nf-test.config declares configFile
+    ├── main.nf.test               # pipeline test lives directly in tests/
+    ├── modules/local/data_process/
+    │   ├── main.nf.test
+    │   └── nextflow.config
+    └── subworkflows/local/preprocessing/
+        └── main.nf.test
 ```
+
+Each module and subworkflow lives in its own directory as `main.nf`. Test files mirror that path under `tests/`, which fixes how many `../` a test's `script` path needs: from `tests/modules/local/<tool>/main.nf.test` it is `"../../../../modules/local/<tool>/main.nf"`.
 
 ### Root `main.nf` with Staged Execution
 
-A root workflow that validates parameters, parses the samplesheet, and conditionally executes pipeline stages based on `params.stages`. Note how `if` blocks completely remove stages from the DAG when not requested.
-
-> [!note] The `publish:` block and `output {}` block used here are explained in detail in the [[#Publication Patterns|Publication Patterns]] section.
+A root workflow that validates parameters, parses the samplesheet, and conditionally executes pipeline stages based on `params.stages`. `if` blocks completely remove stages from the DAG when not requested.
 
 ```nextflow
 include { samplesheetToList; validateParameters } from 'plugin/nf-schema'
-include { PREPROCESSING } from './subworkflows/local/preprocessing'
-include { ANALYSIS      } from './subworkflows/local/analysis'
+include { PREPROCESSING } from './subworkflows/local/preprocessing/main'
+include { ANALYSIS      } from './subworkflows/local/analysis/main'
 
 params.stages = ["preprocess", "analyze"]
 
@@ -1637,28 +1654,35 @@ workflow {
             .map { meta, processed -> [sample: meta.id, file: processed] }
     }
 
-    def ch_results = channel.empty()
+    def ch_results   = channel.empty()
+    def analysis_out = null                                  // 👁️ Pre-declare; no `def` on the re-assignment below
     if ("analyze" in params.stages) {
-        def ch_analysis_input = preprocessing_out
+        // 👁️ != null, not truthiness — 0 and "" are falsy in Groovy
+        def ch_analysis_input = preprocessing_out != null
             ? preprocessing_out.processed
             : ch_input
         analysis_out = ANALYSIS(ch_analysis_input, channel.value(file(params.reference, checkIfExists: true)))
         ch_results = analysis_out.results
     }
 
+    // 👁️ channel.topic('versions') is global — every process contributes, no wiring
+    def ch_versions = channel.topic('versions')
+        .unique()
+        .collectFile(name: 'software_versions.txt', newLine: true, sort: true)
+
     publish:
     processed = ch_processed_index
     results   = ch_results
-    versions  = channel.topic('versions').unique()
-                    .collectFile(name: 'software_versions.txt', newLine: true, sort: true)
+    versions  = ch_versions
 }
 
+// 👁️ Paths are relative to outputDir (default: results/), NOT params.outdir — see Publication Patterns
 output {
     processed {
-        path 'results/processed'
+        path 'processed'
         index { path 'processed_files.csv'; header true; sep ',' }
     }
-    results  { path 'results/analysis' }
+    results  { path 'analysis' }
     versions { path 'pipeline_info' }
 }
 
@@ -1670,9 +1694,9 @@ def samplesheet_to_channel(csv) { /* see Meta Map Pattern above */ }
 A subworkflow that combines local and nf-core modules. Subworkflows use `take:`/`main:`/`emit:` sections.
 
 ```nextflow
-// subworkflows/local/preprocessing.nf
-include { CLEAN_AND_PROCESS } from '../../modules/local/clean_and_process'
-include { TOOL_DEDUP        } from '../../modules/nf-core/tool/dedup/main'
+// subworkflows/local/preprocessing/main.nf
+include { CLEAN_AND_PROCESS } from '../../../modules/local/clean_and_process/main'
+include { TOOL_DEDUP        } from '../../../modules/nf-core/tool/dedup/main'
 
 workflow PREPROCESSING {
     take:
@@ -1694,13 +1718,13 @@ workflow PREPROCESSING {
 
 ### Bundled Process with Piping
 
-When multiple short tools are chained via pipes, bundling them into a single process avoids the overhead of separate tasks. This is useful when intermediate files aren't needed.
+When multiple short tools are chained via pipes, bundling them into a single process avoids the overhead of separate tasks and the intermediate files.
 
 ```nextflow
 process ETL_PIPELINE {
     tag "${meta.id}"
     label 'process_high'
-    // ⚠️ prefix MUST be a closure, not a bare GString — see [[#Module Conventions|Module Conventions]]
+    // ⚠️ prefix MUST be a closure, not a bare GString
     //   "Mahesh Style" section for why `ext prefix: "${meta.id}"` breaks at runtime.
     ext prefix: { "${meta.id}" }, args: '', when: true
 
@@ -1784,200 +1808,294 @@ process BATCH_GUNZIP {
 
 ## ✅ Validation & Testing
 
-nf-test provides three testing scopes: `nextflow_process` for individual modules, `nextflow_workflow` for subworkflows, and `nextflow_pipeline` for end-to-end pipeline tests.
+### The Four Test Scopes
 
-### `nf-test.config`
+nf-test has four scopes. Pick the one matching what is under test — mixing them up silently changes which features work.
 
-`💡 Convention` — Configure nf-test's test/work directories and plugins once at the project root. Snapshots (`snap/` subdirectories next to each `.nf.test` file) are the regression baseline and must be committed to git.
+| Scope | Tests | Handle in `then {}` | Notes |
+|---|---|---|---|
+| `nextflow_process` | One process/module | `process.out`, `process.success` | Declares `process "NAME"` |
+| `nextflow_workflow` | One subworkflow | `workflow.out`, `workflow.success` | Declares `workflow "NAME"` |
+| `nextflow_pipeline` | Whole pipeline via its entry `main.nf` | `workflow.success`, `failed`, `exitStatus`, `errorReport`, `stdout`, `stderr`, `trace` — **no `workflow.out`** | End-to-end runs |
+| `nextflow_function` | A standalone Groovy/Nextflow function | `function.result`, `function.success` | Declares `function "name"`; omit `script` for a `lib/*.groovy` function |
+
+- `profile` works in all four scopes, but must be declared at the suite level — inside a `test { }` block it raises `MissingMethodException`.
+- A `nextflow_pipeline` test has no output handle: `process.out` and `workflow.out` exist only in the process and workflow scopes. `snapshot(workflow.out)` inside a `nextflow_pipeline` test is always wrong — snapshot the published output tree with `getAllFilesFromDir(...)` instead.
+- `function.failed`, `function.stdout` and `function.stderr` are also available in `nextflow_function`.
+
+### `assertAll` Is Mandatory
+
+`⚠️` Wrap every assertion in `assertAll({ ... }, { ... })`. A bare `assert` inside `then { }` stops the test at the first failure, so a single broken assertion hides all the others. `assertAll` evaluates and reports every one.
 
 ```nextflow
-config {
-    testsDir "tests"
-    workDir  ".nf-test"
-
-    plugins {
-        // 👁️ Template default (nft-utils@0.0.3) lacks sanitizeOutput() — pin 1.0.0
-        load "nft-utils@1.0.0"
-    }
+then {
+    assertAll(
+        { assert process.success },
+        { assert process.out.processed.size() == 2 },
+        { assert snapshot(sanitizeOutput(process.out)).match() }
+    )
 }
 ```
 
-### nf-test for Local Modules
+### Process Test
 
-Test a single process in isolation by providing mock inputs.
+Test one module in isolation. Every module gets a real test and a stub test.
 
 ```nextflow
 nextflow_process {
-    name "Test CLEAN_AND_PROCESS"
-    script "../../modules/local/clean_and_process.nf"
-    process "CLEAN_AND_PROCESS"
-    tag "modules_local"
+    name "Test Process FASTQC"
+    script "../main.nf"
+    process "FASTQC"
 
-    test("Should process input data") {
+    tag "modules"
+    tag "fastqc"
+
+    test("Single-end reads") {
         when {
             process {
                 """
-                input[0] = channel.of(
-                    [[id: 'test_sample', num_files: 1], file("${projectDir}/tests/data/test.dat")]
-                )
-                input[1] = file("${projectDir}/tests/data/index/")
+                input[0] = [
+                    [ id:'test', single_end:true ],
+                    file("${params.modules_testdata_base_path}/genomics/sarscov2/illumina/fastq/test_1.fastq.gz", checkIfExists: true)
+                ]
                 """
             }
         }
         then {
             assertAll(
                 { assert process.success },
-                { assert process.out.processed },
-                { assert process.out.qc }
+                { assert snapshot(sanitizeOutput(process.out, ignoreKeys:["zip"])).match() },
+                { assert path(process.out.zip[0][1]).exists() }
+            )
+        }
+    }
+
+    test("Stub run") {
+        options "-stub"
+        when {
+            process {
+                """
+                input[0] = [ [ id:'test' ], file('dummy.fastq.gz') ]
+                """
+            }
+        }
+        then {
+            assertAll(
+                { assert process.success },
+                { assert snapshot(sanitizeOutput(process.out, ignoreKeys:["zip"])).match() }
             )
         }
     }
 }
 ```
 
-### nf-test for Subworkflows
+`⚠️` Test data comes from `"${params.modules_testdata_base_path}/genomics/sarscov2/..."`. The old `params.test_data['sarscov2'][...]` map is retired and no longer resolves.
 
-Test a subworkflow by providing its `take:` inputs and asserting on `emit:` outputs.
+Differences for the other scopes:
 
-```nextflow
-nextflow_workflow {
-    name "Test PREPROCESSING"
-    script "../../subworkflows/local/preprocessing.nf"
-    workflow "PREPROCESSING"
-    tag "subworkflows_local"
+- **`nextflow_workflow`**: replace `process "NAME"` with `workflow "NAME"` and the `process { }` block in `when` with `workflow { }`. `input[0]`, `input[1]`, … map to the subworkflow's `take:` declarations in order; assert on the `emit:` names via `workflow.out`.
+- **`nextflow_function`**: replace with `function "name"` and a `function { }` block in `when`; assert on `function.result`.
 
-    test("Should preprocess input data") {
-        when {
-            workflow {
-                """
-                input[0] = channel.of(
-                    [[id: 'sample_A', num_files: 1], file("${projectDir}/tests/data/sample_A.dat")],
-                    [[id: 'sample_B', num_files: 1], file("${projectDir}/tests/data/sample_B.dat")]
-                )
-                input[1] = channel.value(file("${projectDir}/tests/data/reference.dat"))
-                input[2] = channel.value(file("${projectDir}/tests/data/index/"))
-                """
-            }
-        }
-        then {
-            assertAll(
-                { assert workflow.success },
-                { assert workflow.out.processed.size() == 2 },
-                { assert workflow.out.qc.size() == 2 },
-                { assert workflow.out.metrics }
-            )
-        }
-    }
+### Pipeline Test
 
-    test("Should handle single sample") {
-        when {
-            workflow {
-                """
-                input[0] = channel.of(
-                    [[id: 'solo_sample', num_files: 1], file("${projectDir}/tests/data/sample_A.dat")]
-                )
-                input[1] = channel.value(file("${projectDir}/tests/data/reference.dat"))
-                input[2] = channel.value(file("${projectDir}/tests/data/index/"))
-                """
-            }
-        }
-        then {
-            assertAll(
-                { assert workflow.success },
-                { assert workflow.out.processed.size() == 1 }
-            )
-        }
-    }
-}
-```
-
-### Pipeline E2E Tests
-
-Test the entire pipeline from samplesheet to final outputs. Use `workflow.trace` to verify task counts.
+`⚠️` Pipeline params belong in a `conf/test_XYZ.config` selected by `profile`, never inline in the `.nf.test` file. Only `outdir` belongs in the `when` block. Inline params bypass the profile's resource caps and cannot be reused by `nextflow run -profile test`.
 
 ```nextflow
 nextflow_pipeline {
-    name "Test full pipeline"
+    name "Test pipeline"
     script "../main.nf"
+    profile "test"
+    tag "pipeline"
 
-    test("Should complete successfully") {
+    test("-profile test") {
         when {
             params {
-                input     = "${projectDir}/tests/data/samplesheet.csv"
-                reference = "${projectDir}/tests/data/reference.dat"
-                index     = "${projectDir}/tests/data/index/"
-                outdir    = "${outputDir}"
+                outdir = "$outputDir"
             }
         }
         then {
+            def stable_name = getAllFilesFromDir(params.outdir, relative: true, includeDir: true, ignore: ['pipeline_info/*.{html,json,txt}'])
+            def stable_path = getAllFilesFromDir(params.outdir, ignoreFile: 'tests/.nftignore')
             assertAll(
                 { assert workflow.success },
-                { assert workflow.trace.succeeded().size() >= 3 },
-                { assert workflow.trace.failed().size() == 0 }
+                { assert snapshot(
+                    removeNextflowVersion("$outputDir/pipeline_info/nf_core_pipeline_software_mqc_versions.yml"),
+                    stable_name,
+                    stable_path
+                ).match() }
             )
         }
     }
+}
+```
 
-    test("Should fail gracefully with missing input") {
-        when {
-            params { input = "non_existent.csv" }
-        }
-        then {
-            assert workflow.failed
-            assert workflow.exitStatus != 0
+`getAllFilesFromDir(..., relative: true, includeDir: true)` snapshots the *shape* of the published tree (relative names only); the second call snapshots file contents, with `tests/.nftignore` listing paths whose contents are unstable. A variant profile gets its own `nextflow_pipeline` block with `profile "test_foo"`, `tag "test_foo"`, and a matching `test("-profile test_foo")` name.
+
+### `sanitizeOutput()`
+
+`sanitizeOutput(process.out)` / `sanitizeOutput(workflow.out)` comes from the `nft-utils` plugin. It strips the numbered channel keys Nextflow duplicates alongside the named ones, so the snapshot stays human-readable, and it takes options for non-deterministic content instead of hand-rolled filtering. Use it in place of a bare `process.out` in both real and stub tests — it is correct for both.
+
+```nextflow
+// unstableKeys: keep the filename, drop the MD5 — content is not reproducible
+assert snapshot(sanitizeOutput(process.out, unstableKeys:["zip"])).match()
+
+// ignoreKeys: drop a channel from the snapshot entirely
+assert snapshot(sanitizeOutput(process.out, ignoreKeys:["log"])).match()
+
+// readsMD5Keys / variantsMD5Keys: content-aware MD5 for BAM|SAM|CRAM and VCF|VCF.GZ
+assert snapshot(sanitizeOutput(process.out, readsMD5Keys:["bam"])).match()
+assert snapshot(sanitizeOutput(process.out, readsMD5Keys:["cram"], referenceFasta: "path/to/ref.fa")).match()
+assert snapshot(sanitizeOutput(process.out, variantsMD5Keys:["vcf"])).match()
+
+// unstablePatterns / ignorePatterns: glob equivalents — the two lists must not overlap
+assert snapshot(sanitizeOutput(process.out, unstablePatterns:["**/*.log"], ignorePatterns:["**/VERSION_*"])).match()
+```
+
+`⚠️` **Compressed outputs are unstable.** A gzip header embeds an mtime, so the md5 of a `.gz` changes between otherwise identical runs and the snapshot fails on a changed hash. (`sanitizeOutput()` has no compression-specific behaviour — it hashes `.gz` like any other file.) The same applies to any output embedding a date: nf-core excludes FastQC's `html`/`zip` because the report writes the run date into the HTML. Exclude such keys and assert their existence separately.
+
+```nextflow
+assertAll(
+    { assert snapshot(sanitizeOutput(process.out, ignoreKeys:["html", "zip"])).match() },
+    { assert path(process.out.zip[0][1]).exists() }
+)
+```
+
+Prefer a channel-specific key (`unstableKeys`/`ignoreKeys`) over a glob when targeting one known channel.
+
+### Snapshot Discipline
+
+- **Snapshot what is reproducible**: text reports, TSV/CSV tables, `versions.yml`, the meta map, channel sizes, and the relative shape of the published tree.
+- **Use `.exists()`, `.name`, or a `contains()` content check** for anything carrying a timestamp, a temporary path, a tool version banner, or a random seed.
+- **Every `touch`ed stub output hashes to `d41d8cd98f00b204e9800998ecf8427e`** — the MD5 of an empty file. A stub snapshot full of that value confirms the output declarations match the emitted names; it says nothing about the tool.
+- **One `snapshot()` call per test.** Every assertion for a test, `versions` included, lands in a single `snapshot(...)`.
+- **Commit the `.snap` files** — each sits next to its `.nf.test` file as `<name>.nf.test.snap` (there is no `snap/` directory) and is the regression baseline. CI never auto-creates a missing snapshot; an uncommitted one fails the first CI run outright.
+- **Never run `--update-snapshot` without reading the diff.** Diff the `.snap` file in git afterwards and account for every change. Do not dismiss a diff as stochastic — most pipelines use fixed seeds, so treat a diff as a regression until proven otherwise.
+
+### Format-Specific Content Helpers
+
+`⚠️` A raw MD5 of a BAM, CRAM, VCF or FASTQ is not stable — tool-version header lines and record ordering change the bytes without changing the data. Use a format-aware accessor:
+
+```nextflow
+assert snapshot(bam(process.out.bam[0][1]).getReadsMD5()).match()
+assert snapshot(path(process.out.vcf[0][1]).vcf.getVariantsMD5()).match()
+```
+
+| Plugin | Adds |
+|---|---|
+| `nft-bam` | `bam(file).getReadsMD5()` — read-aware hash for BAM/SAM/CRAM |
+| `nft-vcf` | `path(file).vcf.getVariantsMD5()` — variant-aware hash for VCF/VCF.GZ |
+| `nft-csv` | Structured CSV comparison, with a `decompress` option for `.csv.gz` |
+| `nft-fastq` | FASTQ-specific content comparison |
+| `nft-compress` | `path(file).zip` — inspect zip entries as path objects |
+
+`sanitizeOutput`'s `readsMD5Keys`/`variantsMD5Keys` wrap the first two. Fall back to the standalone accessors if the pinned `nft-utils` lacks those options.
+
+### Fixture Chaining: `setup { run(...) }`
+
+Run a real upstream process and feed its output into the process under test, instead of hand-authoring a static fixture:
+
+```nextflow
+setup {
+    run("UNTAR") {
+        script "../../untar/main.nf"
+        process {
+            """
+            input[0] = [ [id:'test'], file("${params.modules_testdata_base_path}/genomics/sarscov2/genome/genome.fasta.gz", checkIfExists: true) ]
+            """
         }
     }
 }
+
+when {
+    process {
+        """
+        input[0] = UNTAR.out.untar
+        """
+    }
+}
 ```
+
+Use `run("UNTAR", alias: "UNTAR1")` to run the same process twice and reference `UNTAR1.out` / `UNTAR2.out` independently. A change to the upstream dependency breaks this test even when the process under test is untouched, so carry the upstream module's tags on the downstream test file to re-trigger it in CI.
+
+### `nf-test.config`
+
+`💡 Convention` — Configure directories, the shared test config, and plugins once at the project root.
+
+```nextflow
+config {
+    testsDir "tests"
+    workDir  ".nf-test"
+    configFile "tests/nextflow.config"       // 👁️ REQUIRED — nf-test exits without this file
+    ignore 'modules/nf-core/**/tests/*', 'subworkflows/nf-core/**/tests/*'
+    profile "test"
+    triggers 'nextflow.config', 'nf-test.config', 'conf/test.config', 'tests/nextflow.config', 'tests/.nftignore'
+    plugins {
+        load "nft-utils@1.1.1"   // 👁️ 0.0.3 (template default) lacks sanitizeOutput();
+                                 //    ignoreKeys/readsMD5Keys/unstablePatterns need >= 1.1.0
+    }
+}
+```
+
+Also available: `libDir` (folder added to the test classpath — where shared Groovy helpers and `nextflow_function` targets live), `autoSort` (default `true`; sorts channel emissions before assertions, which is what makes `process.out.bam[0][1]` reliable — do not disable it), `withTrace`, `options` (extra Nextflow CLI args for every run), `requires` (minimum nf-test version).
+
+`tests/nextflow.config` is loaded for every test under `tests/`:
+
+```nextflow
+params {
+    modules_testdata_base_path   = 'https://raw.githubusercontent.com/nf-core/test-datasets/modules/data/'
+    pipelines_testdata_base_path = 'https://raw.githubusercontent.com/nf-core/test-datasets/refs/heads/PIPELINE_NAME'
+}
+aws.client.anonymous = true
+```
+
+### The `--profile` Trap
+
+`⚠️` A `--profile` on the nf-test command line **replaces** the `profile "test"` default in `nf-test.config` — it does not add to it. `nf-test test --profile docker` therefore drops `conf/test.config` entirely, along with its small-data paths and resource caps, and the run either uses production defaults or fails outright.
 
 ```bash
-nf-test init
-nf-test test tests/**/*.nf.test --profile docker
+nf-test test --profile docker      # ❌ conf/test.config is gone
+nf-test test --profile test,docker # ✅ list every profile you need
+nf-test test --profile +docker     # ✅ leading + appends to the configured default
 ```
 
----
+### CLI Flags
 
-## 🏋️ Resource Management
-
-### Process Resource Limits
-
-`resourceLimits` caps any process that requests more than the cluster maximum. This replaces the old `params.max_cpus` / `params.max_memory` pattern.
-
-```nextflow
-process {
-    resourceLimits = [cpus: 24, memory: 128.GB, time: 72.h]   // 👁️ Caps any label that exceeds it
-}
+```bash
+nf-test init                                        # Scaffold nf-test.config
+nf-test list                                        # List available tests
+nf-test test                                        # Run everything
+nf-test test tests/modules/local/fastqc/            # Run one path
+nf-test test --profile test,docker                  # Profiles REPLACE the default — pass all of them
+nf-test test --tag "modules"                        # Filter by tag
+nf-test test --filter process                       # Restrict to one scope: process|workflow|pipeline|function
+nf-test test --changed-since HEAD~1                 # Only tests affected by files changed since a git ref
+nf-test test --related-tests --follow-dependencies  # Also pull in tests for anything the changed files depend on
+nf-test test --shard 1/4                            # Run shard 1 of 4 — for parallel CI matrices
+nf-test test --ci                                   # CI mode: never create a missing snapshot, fail instead
+nf-test test --tap results.tap                      # Report export: --tap / --junitxml / --csv
+nf-test test --update-snapshot                      # Rewrite snapshots — always read the diff afterwards
+nf-test test --verbose --stop-on-first-failure      # Debugging a single failure
 ```
 
-See `conf/base.config` in Configuration Patterns below for the full label-to-resource mapping.
+### Debugging a Failure
 
-### Dynamic Retry with Resource Escalation
+A real (non-`-stub`) failure runs under `.nf-test/tests/<test-hash>/work/<xx>/<yyyy...>`, not the plain `work/` of a normal `nextflow run`. Inspect `.command.sh`, `.command.err` and `.command.out` there; `.nf-test/tests/<test-hash>/meta/nextflow.log` holds the full run log for that test.
 
-Multiply resources by `task.attempt` so each retry gets more resources. Combined with `errorStrategy`, this handles transient OOM/timeout failures automatically.
+### Test Requirements Worth Enforcing
 
-```nextflow
-process ASSEMBLY {
-    label 'process_high'
-    cpus   { 8     * task.attempt }      // 👁️ Closure braces = re-evaluated on retry
-    memory { 16.GB * task.attempt }
-    time   { 4.h   * task.attempt }
+nf-core grades these (items 1-3 MUST, 4 SHOULD) for contributed modules; hold local modules to the same bar.
 
-    errorStrategy {
-        task.exitStatus in [104, 110, 137, 139, 143] && task.attempt <= 3
-            ? 'retry' : 'finish'
-    }
-    maxRetries 3
-}
-```
+1. A stub test for every module, not an optional extra.
+2. At least one success assertion plus the `versions` channel in the snapshot.
+3. Tags propagate from dependent modules — a test using `setup { run(...) }` carries the upstream module's tags so upstream changes re-trigger it.
+4. A GPU-capable module ships a separate `main.gpu.nf.test` rather than branching inside one file.
+5. Supply `ext.args` from a single `tests/nextflow.config` reading `params`, set per test in the `when { params { } }` block — the current nf-core specification. (The older per-variant `config "./x.nextflow.config"` file is superseded; nf-test has no inline `config { }` block, only a `config` directive taking a path.)
 
 ---
 
 ## 📤 Publication Patterns
 
-Modern Nextflow uses `publish:` labels in the workflow block paired with an `output {}` block to control where files are published.
-`publishDir` is still a valid pattern, especially for pipelines not yet using the `output {}` block. When using `publishDir`, configure
-it in `modules.config` via `withName:` selectors — not inside the process definition itself. This keeps processes portable and publishing
-decisions centralized.
+Modern Nextflow pairs `publish:` labels in the workflow block with an `output {}` block. `publishDir` remains valid for pipelines not yet using `output {}` — configure it in `modules.config` via `withName:` selectors, never inside the process definition.
 
 ### Workflow Output with Output Block
 
@@ -1999,22 +2117,76 @@ workflow ANALYSIS {
 }
 
 workflow {
+
+    main:                                                  // 👁️ REQUIRED: a workflow with a
+                                                           //    publish: section must label main:
     analysis_out = ANALYSIS(ch_input)
 
     publish:                                               // 👁️ Labels map to output {} targets
     output   = analysis_out.output
     results  = analysis_out.results
-    versions = channel.topic('versions').unique()
-                    .collectFile(name: 'software_versions.txt', newLine: true, sort: true)
+    // 👁️ ch_versions built with channel.topic('versions') — see Modern DSL2 Syntax → Version Capture
+    versions = ch_versions
 }
 
 output {                                                   // 👁️ Defines publish destinations
     output {
-        path 'results/processed'
+        path 'processed'                                   // 👁️ relative to outputDir → results/processed
         index { path 'processed_files.csv'; header true; sep ',' }
     }
-    results  { path 'results/analysis' }
+    results  { path 'analysis' }
     versions { path 'pipeline_info' }
+}
+```
+
+### `main:` Is Mandatory Alongside `publish:`
+
+`⚠️ Bug` — The `main:` label may be omitted **only** when no other section label is present. Add a `publish:` section (or `take:`/`emit:`) and the workflow no longer parses without `main:`.
+
+```nextflow
+// ❌ Does not parse — publish: present, main: missing
+workflow {
+    analysis_out = ANALYSIS(ch_input)
+    publish:
+    results = analysis_out.results
+}
+
+// ✅
+workflow {
+    main:
+    analysis_out = ANALYSIS(ch_input)
+    publish:
+    results = analysis_out.results
+}
+```
+
+### `output {}` Paths Resolve Against `outputDir`, Not `params.outdir`
+
+`⚠️ Bug` — Paths in `output {}` are relative to **`outputDir`**, the engine setting. `params.outdir` is an nf-core convention with no meaning to the engine.
+
+| Setting | What it is | How it is set |
+|---|---|---|
+| `outputDir` | Engine setting; base directory for `output {}` | `-output-dir` on the CLI, or `outputDir` in config. Default: `results` in the launch dir |
+| `params.outdir` | Ordinary pipeline parameter | `--outdir` on the CLI |
+
+Unless the pipeline explicitly wires them together, `--outdir` silently has **no effect** on where `output {}` publishes:
+
+```nextflow
+// nextflow.config — makes --outdir actually control output {} publishing
+outputDir = params.outdir
+```
+
+Because paths are already relative to `outputDir`, never repeat the output directory name inside them:
+
+```nextflow
+// ❌ With the default outputDir this publishes to results/results/processed
+output {
+    processed { path 'results/processed' }
+}
+
+// ✅ Publishes to <outputDir>/processed
+output {
+    processed { path 'processed' }
 }
 ```
 
@@ -2029,7 +2201,7 @@ output {                                                   // 👁️ Defines pu
 
 ### Root `nextflow.config`
 
-The root config sets params, plugins, process.shell, includes split configs, and defines profiles. Executor configuration belongs **only in profiles** (except `executor = 'local'`).
+The root config sets params, plugins, process.shell, includes split configs, and defines profiles. Executor configuration belongs **only in profiles** — except a process pinned to `executor 'local'`, which must also carry `maxForks`.
 
 ```nextflow
 // nextflow.config
@@ -2039,8 +2211,12 @@ params {
     save_intermediates = false
 }
 
+// 👁️ output {} publishes relative to outputDir, not params.outdir — wire them together
+//    or --outdir has no effect on published paths
+outputDir = params.outdir
+
 plugins {
-    id 'nf-schema@2.3.0'
+    id 'nf-schema@2.8.0'
 }
 
 // Set bash options (matches nf-core template)
@@ -2090,18 +2266,60 @@ Resource labels and limits are hardcoded — never use `params.max_cpus` / `para
 ```nextflow
 // conf/base.config
 process {
-    resourceLimits = [cpus: 24, memory: 128.GB, time: 72.h]
+    resourceLimits = [ cpus: 24, memory: 128.GB, time: 72.h ]   // 👁️ Cluster maximum
 
-    withLabel: process_single { cpus = 1;  memory = 2.GB;  time = 1.h  }
-    withLabel: process_low    { cpus = 2;  memory = 4.GB;  time = 2.h  }
-    withLabel: process_medium { cpus = 6;  memory = 16.GB; time = 8.h  }
-    withLabel: process_high   { cpus = 12; memory = 64.GB; time = 24.h }
+    // 👁️ Retry only on OOM/timeout exit codes. A generic `task.attempt <= N`
+    //    retries genuine bugs N times before failing.
+    errorStrategy  = { task.exitStatus in ((130..145) + 104) && task.attempt <= 3 ? 'retry' : 'finish' }
+    maxRetries     = 3
+
+    withLabel: 'process_single' { cpus = 1;  memory = 6.GB;  time = 4.h  }
+    withLabel: 'process_low'    { cpus = 2;  memory = 12.GB; time = 4.h  }
+    withLabel: 'process_medium' { cpus = 6;  memory = 36.GB; time = 8.h  }
+    withLabel: 'process_high'   { cpus = 12; memory = 72.GB; time = 24.h }
+    withLabel: 'process_long'   { time = 48.h }
 }
 ```
 
+These values match `Pipeline_building_instructions.md` Phase 7 — keep the two in step. `(130..145)` covers the signal-kill codes (128+N); `104` is the out-of-memory code some schedulers return.
+
+### Capping the Local Executor's Resource Pool
+
+`⚠️ Bug` — `resourceLimits` caps what a **single task may request**. It does **not** limit how many tasks the **local** executor runs at once. The local pool is auto-detected from the whole machine, so on a shared login node Nextflow will happily claim every core and all the RAM it can see.
+
+`executor.cpus` / `executor.memory` override that pool. Both are local-executor-only by definition, so they do not affect whichever executor (slurm, sge, ...) handles submitted jobs — a slurm profile and a local cap coexist happily.
+
+```nextflow
+// Local/institutional config (e.g. -c local.config) — NOT conf/base.config
+executor {
+    cpus   = 4        // 👁️ Total cores the local executor may use across ALL concurrent tasks
+    memory = 8.GB     // 👁️ Total memory for the same
+}
+```
+
+The `$`-scoped form (`executor.$local.cpus`) is documented and behaves identically, but Nextflow 26.04 emits `WARN: Unrecognized config option 'executor.$local.cpus'` for it. Prefer the unscoped form: same effect, no spurious warning.
+
+Verified: with `executor.cpus = 1`, four 2-second tasks take ~11 s; with `executor.cpus = 4`, ~4 s.
+
+Keep this out of `conf/base.config`: the pipeline's shared config must not encode one machine's capacity.
+
+### Processes Pinned to `executor 'local'` Need `maxForks`
+
+`⚠️ Bug` — A process hardcoded to `executor 'local'` bypasses the scheduler entirely, so `executor.queueSize` and `executor.submitRateLimit` — which throttle submitted jobs — do not apply. Without `maxForks` the process fans out across every sample at once on the head node.
+
+```nextflow
+process FETCH_REMOTE {
+    executor 'local'    // 👁️ Bypasses the scheduler
+    maxForks 2          // 👁️ Required here: queueSize/submitRateLimit do not throttle local
+    ...
+}
+```
+
+Put `maxForks` directly under the `executor 'local'` directive so the pairing is obvious to the next reader.
+
 ### `conf/modules.config`
 
-Use simple names (not fully qualified) to allow easier user configuration. Process aliases are configured by their alias name. Use `ext.args` and `ext.prefix` to control process behavior from configuration.
+Use simple names (not fully qualified) to allow easier user configuration. Process aliases are configured by their alias name. Use `ext.args` and `ext.prefix` to control process behaviour from configuration.
 
 > [!note] **`ext.when` in config: sample-skipping workaround only**
 > Do not use `ext.when` for general conditional logic — use workflow-level `if` blocks or channel operators instead. The only legitimate use of `ext.when` in config is the uncommon case of skipping individual failed samples when resuming a pipeline that lacks built-in sample-failure handling:
@@ -2143,8 +2361,6 @@ process {
 ```
 
 ### Configuration Precedence Rules
-
-Understanding how configuration sources combine prevents surprises.
 
 **Selector precedence** (same directive, same scope):
 - `withName` beats `withLabel` beats unscoped `process {}`
@@ -2216,11 +2432,8 @@ bash .command.run # 👁️ run .command.sh in execution environment
 
 ## 📝 Best Practices Checklist
 
-Markers: `⚠️` = causes bugs/failures, `💡` = convention/best practice, `🎨` = style preference
-
 ### Code Quality & Syntax
 
-- [ ] `💡` Use `path` qualifier: Never `file`
 - [ ] `💡` Check file existence: `file(params.x, checkIfExists: true)`
 - [ ] `💡` Lowercase `channel`: `channel.of`, `channel.fromPath`, `channel.value`, `channel.topic`
 - [ ] `💡` Value channels for single files: `channel.value(file(...))`
@@ -2247,10 +2460,10 @@ Markers: `⚠️` = causes bugs/failures, `💡` = convention/best practice, `�
 - [ ] `⚠️` Channels only in workflow blocks: Never inside processes or operator closures
 - [ ] `💡` No `params` in process scripts: Pass everything through `input:` declarations
 - [ ] `⚠️` Declare all dependencies: `conda`/`container` for every tool used in `script:`
+- [ ] `⚠️` Never invent a container URI, image digest, build hash, CLI flag, or version number: get them from the programmer or a real registry lookup
 - [ ] `💡` Use `log.info`/`log.warn`/`log.error`: Never `println` in workflow blocks
 - [ ] `⚠️` Never `System.exit()`: Use `error()` for graceful shutdown with cleanup
 - [ ] `💡` No `when:` for conditional logic: Use `if` blocks or `filter`/`branch` in workflow scope
-- [ ] `💡` No `ext.when` in config for general logic: Only for sample-skipping workaround on `-resume`
 - [ ] `⚠️` No `for` loops in workflow scope: Use channel operators
 - [ ] `⚠️` Synchronize queue channel inputs: Two or more queue channels must use `join` or `combine`
 
@@ -2259,7 +2472,8 @@ Markers: `⚠️` = causes bugs/failures, `💡` = convention/best practice, `�
 - [ ] `💡` Standard assignments: No `set` or `tap`
 - [ ] `💡` Standard method calls: No `|` or `&` dataflow operators
 - [ ] `💡` Assign process outputs: `result = PROCESS(...)` not `PROCESS.out`
-- [ ] `💡` No `each` qualifier: Use `combine` instead
+- [ ] `💡` No `each` qualifier: Unavailable in typed processes — use `combine` instead
+- [ ] `⚠️` No `switch`: Removed under strict syntax (does not parse) — use `if`-`else` or a map lookup
 - [ ] `💡` No legacy operators: Replace with `flatMap` + method equivalents
 - [ ] `💡` Run `nextflow lint`: Verify strict syntax compliance
 
@@ -2273,6 +2487,8 @@ Markers: `⚠️` = causes bugs/failures, `💡` = convention/best practice, `�
 - [ ] `🎨` Harshil alignment: Right-aligned `emit:`/`topic:` labels (nf-core convention)
 - [ ] `💡` Optional inputs: `[]` for paths, `''` for values
 - [ ] `💡` Input arity: Use `arity:` (string value) to enforce file counts and type
+- [ ] `⚠️` Never `arity: '0..1'`: illegal on inputs **and** outputs. Optional path input → `'0..*'`; optional single-file output → `optional: true` with **no** `arity`
+- [ ] `⚠️` Only `arity: '1'` is a bare `Path`: every range form is a `List<Path>`, even for one file
 - [ ] `💡` Never use `beforeScript`/`afterScript`
 - [ ] `💡` `bin/` scripts: Executable with `#!/usr/bin/env` shebangs; call by name not interpreter
 - [ ] `💡` Sourced scripts: Comment the origin URL/tool for upstream bug fixes
@@ -2287,30 +2503,24 @@ Markers: `⚠️` = causes bugs/failures, `💡` = convention/best practice, `�
 - [ ] `💡` `multiMap`: Split channels for nf-core module inputs
 - [ ] `💡` `of()` vs `fromList()`: `of` spreads; `fromList` takes list
 - [ ] `💡` `collect()` vs `collectFile()`: Items to list vs items to file
-- [ ] `⚠️` No channels inside closures: Never use channel factories/operators inside `.map`, `.filter`, etc.
-- [ ] `⚠️` Synchronize queue inputs: `join`/`combine` before passing to processes with multiple queue inputs
-- [ ] `⚠️` `ifEmpty` null guard: Always follow `.ifEmpty { ... }` with `.filter { item -> item != null }`
 
 ### Architecture
 
-- [ ] `💡` Bundle short processes: Under ~5 minutes
 - [ ] `💡` Batch short tasks: `xargs` or `parallel`
 - [ ] `💡` Pipe between tools: Avoid intermediate files
-- [ ] `💡` Clean temp files: `rm -rf` when piping isn't possible
 - [ ] `💡` Module layout: `modules/local/`, `modules/nf-core/`
 - [ ] `💡` Subworkflow layout: `subworkflows/local/`, `subworkflows/nf-core/`
 - [ ] `💡` Database caching: `storeDir` with `params.db_cachedir`
 - [ ] `💡` `exec:` for API calls: Native processes without containers
-- [ ] `💡` Conditional execution in workflow scope: `if` blocks or `filter`/`branch`
-- [ ] `⚠️` No `for` loops: Use channel operators for iteration
-- [ ] `⚠️` No `System.exit()`: Use `error()` for all pipeline aborts
 
 ### Configuration
 
 - [ ] `💡` `process.shell`: Set bash options matching nf-core template
 - [ ] `💡` Config split: `base.config` + `modules.config` via `includeConfig`
 - [ ] `💡` `resourceLimits`: Hardcoded in base config — no `params.max_*`
+- [ ] `💡` Cap the local pool: `executor.cpus`/`executor.memory` (unscoped — the `$local` form warns on 26.04) in local config — `resourceLimits` does not throttle the local executor
 - [ ] `💡` Executor in profiles only: Never hardcode executor (except `'local'`)
+- [ ] `⚠️` `executor 'local'` needs `maxForks`: `queueSize`/`submitRateLimit` don't apply to local tasks
 - [ ] `💡` Simple names: Prefer `withName: 'TOOL'` over fully qualified names
 - [ ] `⚠️` Closures for dynamic ext: `ext.args = { ... }` when referencing `meta` or `params`
 - [ ] `💡` No `ext.when` in config: Except for sample-skipping workaround on `-resume`
@@ -2318,181 +2528,22 @@ Markers: `⚠️` = causes bugs/failures, `💡` = convention/best practice, `�
 ### Publishing
 
 - [ ] `💡` `publish:` labels + `output {}` block
+- [ ] `⚠️` `main:` is mandatory in any workflow that has a `publish:` section
+- [ ] `⚠️` `output {}` paths are relative to `outputDir` (default `results`), not `params.outdir` — set `outputDir = params.outdir` to link them, and never repeat `results/` in the path
 - [ ] `💡` Index samplesheets: For staged execution
 - [ ] `💡` No `publishDir` in process definitions: Use `output {}` block, or configure `publishDir` in `modules.config`
 
 ### Testing
 
-- [ ] `💡` Module tests: `nextflow_process`
-- [ ] `💡` Subworkflow tests: `nextflow_workflow`
-- [ ] `💡` Pipeline tests: `nextflow_pipeline` with trace assertions
-- [ ] `💡` Failure tests: Invalid inputs fail gracefully
+- [ ] `💡` Four scopes: `nextflow_process`, `nextflow_workflow`, `nextflow_pipeline`, `nextflow_function`
+- [ ] `⚠️` Wrap every assertion in `assertAll({ }, { })` — never a bare `assert` in `then {}`
+- [ ] `⚠️` No `workflow.out` in a `nextflow_pipeline` test — snapshot `getAllFilesFromDir(...)` instead
+- [ ] `⚠️` Pipeline params live in `conf/test_XYZ.config`; only `outdir` goes in the `when` block
+- [ ] `💡` `sanitizeOutput(process.out)` over bare `process.out`, in stub and real tests alike
+- [ ] `⚠️` Exclude `.gz`/`.zip` keys from the snapshot; assert `.exists()` separately
+- [ ] `⚠️` Test data from `params.modules_testdata_base_path` — `params.test_data[...]` is retired
+- [ ] `⚠️` `--profile docker` replaces the default — pass `--profile test,docker` or `--profile +docker`
+- [ ] `💡` Commit the `*.nf.test.snap` files (no `snap/` dir); never `--update-snapshot` without reading the diff
+- [ ] `💡` Format-aware hashes for BAM/VCF/FASTQ, never a raw MD5
+- [ ] `💡` A stub test for every module; `versions` in the snapshot
 - [ ] `💡` CI/CD: nf-test on every PR
-
----
-
-## 🔧 Quick Migration Examples
-
-Quick before/after patterns for the most common migrations.
-
-### Standard assignment (static typing ready)
-
-```nextflow
-// ✅
-ch_data = channel.of(1, 2, 3)
-result = MY_PROCESS(ch_data)
-result.output.view()
-
-// ❌
-channel.of(1, 2, 3).set { ch_data }
-MY_PROCESS(ch_data)
-MY_PROCESS.out.output.view()
-```
-
-### Replace `each` with `combine`
-
-```nextflow
-// ✅
-ANALYZE(datasets.combine(methods))
-// ❌
-process ANALYZE { input: path data; each method }
-```
-
-### Replace legacy operators
-
-```nextflow
-// ✅
-channel.fromPath('samplesheet.csv').flatMap { csv -> csv.splitCsv(sep: ',') }
-// ❌
-channel.fromPath('samplesheet.csv').splitCsv(sep: ',')
-```
-
-### Value channels for single files
-
-```nextflow
-// ✅
-ch_ref = channel.value(file(params.reference, checkIfExists: true))
-// ❌
-ch_ref = channel.fromPath(params.reference, checkIfExists: true).collect()
-```
-
-### Mahesh style local modules (ext defaults) and output at end.
-
-```nextflow
-// ✅ ext defaults in directives — no ?: '' needed in script
-// ✅ directives, inputs, when, script, output
-// ⚠️ prefix MUST be a closure `{ "${meta.id}" }`, not a bare GString —
-//   see [[#Module Conventions|Module Conventions]] "Mahesh style" for why.
-process TASK {
-    ext prefix: { "${meta.id}" }, args: '', when: true
-
-    input:
-    tuple val(meta), path (thing)
-
-    when: task.ext.when
-
-    script:
-    def args = task.ext.args
-    def prefix = task.ext.prefix
-    """
-    echo "${thing} ${args}" > ${prefix}.record
-    """
-
-    output:
-    stdout
-}
-```
-
-### Bash escaping
-
-```nextflow
-// ✅ meta.id is interpolated by Nextflow; PWD by Bash
-"""
-echo "${meta.id}" ; echo "\${PWD}"
-"""
-// ❌ PWD is interpolated by Nextflow
-"""
-OUTDIR="${PWD}/results"
-"""
-```
-
-### `getBaseName` for compressed files
-
-```nextflow
-// ✅
-def basename = myfile.getBaseName(myfile.name.endsWith('.gz') ? 2 : 1)
-// ❌ (for .gz, .bgz, .bz2 files)
-def basename = myfile.getBaseName()
-```
-
-### Conditional execution (not `when:`)
-
-```nextflow
-// ✅ if block — removes process from DAG entirely
-if (params.run_qc) {
-    qc_out = QC(ch_input)
-}
-
-// ✅ branch — process in DAG, receives filtered items
-ch_routed = ch_input.branch { meta, _f -> needs_qc: meta.needs_qc; skip: true }
-qc_out = QC(ch_routed.needs_qc)
-
-// ❌ when: directive — process scheduled then skipped, wastes resources
-process QC { when: params.run_qc }
-```
-
-### Channel operators (not `for` loops)
-
-```nextflow
-// ✅
-ch_samples = channel.of('A', 'B', 'C')
-result = PROCESS(ch_samples)
-
-// ❌
-for (s in ['A', 'B', 'C']) { PROCESS(s) }
-```
-
-### Synchronize queue channel inputs
-
-```nextflow
-// ✅ Join by key before passing to process
-ch_synced = ch_data.join(ch_index)
-PROCESS(ch_synced)
-
-// ❌ Two unsynchronized queue channels — silent mismatch
-PROCESS(ch_data, ch_index)
-```
-
----
-
-## 📚 Additional Resources
-
-### Official Documentation
-
-- **Nextflow Docs:** https://docs.seqera.io/nextflow/
-- **Operators:** https://docs.seqera.io/nextflow/reference/operator
-- **Channels:** https://docs.seqera.io/nextflow/reference/channel
-- **Processes:** https://docs.seqera.io/nextflow/reference/process
-- **Workflows:** https://docs.seqera.io/nextflow/reference/workflow
-- **Config:** https://docs.seqera.io/nextflow/reference/config
-- **nf-schema Plugin:** https://nextflow-io.github.io/nf-schema/
-
-### Community Resources
-
-- **nf-core Guidelines:** https://nf-co.re/docs/guidelines
-- **nf-test Documentation:** https://www.nf-test.com/
-- **Nextflow Patterns:** https://nextflow-io.github.io/patterns/
-- **Seqera Community:** https://community.seqera.io/
-
-```bash
-curl -sL https://docs.seqera.io/nextflow/reference/operator
-curl -sL https://docs.seqera.io/nextflow/reference/channel
-nf-test init
-nf-test test tests/**/*.nf.test --profile docker
-```
-
----
-
-> **Last Updated:** April 18, 2026
-> **Nextflow Version:** 26.04+
-> **nf-core Compatible:** Yes
